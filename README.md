@@ -412,46 +412,59 @@ An operator serving *other* namespaces is never suspended on our authority:
 
 ### Vía per kind, measured against real clusters
 
-`✅` supported, measured clean end to end · everything else is `WIP` — being
-worked, in progress, or waiting on a decision, never presented as broken.
+**54 kinds total**: the 40 in `tp_core.operators.REGISTRY`, plus 14 more from the
+architect's research list that aren't wired into it yet. All of them, in one
+table — nothing held out as a footnote.
+
+`✅` supported, measured clean end to end · `excluded` is a deliberate scope
+decision, explained below · everything else is `WIP` — being worked, in
+progress, or waiting on a decision, never presented as broken.
 
 | Kind | Status | Kind | Status |
 |---|---|---|---|
-| `Alertmanager` | WIP | `MongoDB` | WIP |
-| `CassandraDatacenter` | ✅ | `MongoDBCommunity` | WIP |
-| `ClickHouseInstallation` | WIP | `MySQLCluster` (MOCO) | ✅ |
-| `Cluster` (CloudNativePG) | WIP | `MysqlCluster` (Presslabs) | WIP |
-| `CouchbaseCluster` | WIP | `NexusRepo` | WIP |
-| `CrdbCluster` (CockroachDB) | ✅ | `OpenSearchCluster` | WIP |
-| `Dragonfly` | ✅ | `PerconaServerMongoDB` | ✅ |
-| `Elasticsearch` | WIP | `PerconaXtraDBCluster` | ✅ |
-| `EtcdCluster` | WIP | `PostgresCluster` | WIP |
-| `Hazelcast` | WIP | `Prometheus` | WIP |
-| `InnoDBCluster` (Oracle) | WIP | `RabbitmqCluster` | ✅ |
-| `KafkaNodePool` | WIP | `RedisCluster` | WIP |
-| `Keycloak` | WIP | `RedisEnterpriseCluster` | WIP |
-| `MariaDB` | ✅ | `RedisFailover` | WIP |
-| `Milvus` | WIP | `ScyllaCluster` | WIP |
-| `Seaweed` | ✅ | `SolrCloud` | WIP |
-| `TemporalCluster` | WIP | `Tenant` (MinIO) | WIP |
-| `TidbCluster` | WIP | `VMCluster` | WIP |
-| `Valkey` | WIP | `VirtualMachine` (KubeVirt) | ✅ |
+| `Airflow` | WIP | `Alertmanager` | WIP |
+| `ArangoDB` | WIP | `Artifactory` | WIP |
+| `CassandraDatacenter` | ✅ | `CephCluster` (Rook) | excluded |
+| `ClickHouseInstallation` | WIP | `Cluster` (CloudNativePG) | WIP |
+| `CouchDB` | ✅ | `CouchbaseCluster` | WIP |
+| `CrdbCluster` (CockroachDB) | ✅ | `Dragonfly` | ✅ |
+| `Elasticsearch` | WIP | `EtcdCluster` | WIP |
+| `Gitea` | WIP | `Harbor` | WIP |
+| `Hazelcast` | WIP | `InfluxDB` | WIP |
+| `InnoDBCluster` (Oracle) | WIP | `Jenkins` | WIP |
+| `KafkaNodePool` | WIP | `Keycloak` | WIP |
+| `MariaDB` | ✅ | `Memcached` | WIP |
+| `Milvus` | WIP | `MongoDB` | WIP |
+| `MongoDBCommunity` | WIP | `MySQLCluster` (MOCO) | ✅ |
+| `MysqlCluster` (Presslabs) | WIP | `NATS` | ✅ |
+| `Neo4j` | WIP | `NexusRepo` | WIP |
+| `OpenSearchCluster` | WIP | `PerconaServerMongoDB` | ✅ |
+| `PerconaXtraDBCluster` | ✅ | `PostgresCluster` | WIP |
+| `Prometheus` | WIP | `Pulsar` | WIP |
+| `RabbitmqCluster` | ✅ | `RedisCluster` | WIP |
+| `RedisEnterpriseCluster` | WIP | `RedisFailover` | WIP |
+| `ScyllaCluster` | WIP | `Seaweed` | ✅ |
+| `SolrCloud` | WIP | `TemporalCluster` | ✅ |
+| `Tenant` (MinIO) | WIP | `TidbCluster` | WIP |
+| `Valkey` | WIP | `Vault` | excluded |
+| `VirtualMachine` (KubeVirt) | ✅ | `VMCluster` | WIP |
 | `ZookeeperCluster` | WIP | `postgresql` (Zalando) | ✅ |
+
+**14 ✅ today**, measured clean end to end against real clusters, not read off
+a spec sheet.
 
 `VirtualMachine`'s disk moves through its own dedicated DataVolume swap
 (`tp compat kv-dv-swap.sh swap <ns> <vm> <datavolume> <target-pv> <target-sc>`),
 not the generic CR patch — measured end to end, including data surviving
-inside the guest.
-
-14 more kinds are researched but not shipped in the registry — most fall back
-to the generic unknown-operator path (scale directly, said out loud): Gitea,
-CouchDB, Neo4j, ArangoDB, InfluxDB, Harbor, Pulsar, Artifactory, Jenkins,
-Airflow. **NATS** is already confirmed **✅** on that same generic path.
-`CephCluster` (Rook) is excluded on purpose — storage infrastructure, like
-Trident itself, not something this product migrates. `Vault` is excluded too:
+inside the guest. `Gitea`, `CouchDB`, `Neo4j`, `ArangoDB`, `InfluxDB`, `Harbor`,
+`Pulsar`, `Artifactory`, `Jenkins` and `Airflow` aren't in the registry — most
+fall back to the generic unknown-operator path (scale directly, said out
+loud); `CouchDB` and `NATS` are already confirmed there. `CephCluster` (Rook)
+is excluded on purpose: storage infrastructure, like Trident itself — not
+something this product migrates. `Vault` is excluded on purpose too:
 migrating its Raft store underneath it is a correctness risk the catalog
-doesn't take on. Memcached's current chart ships with no persistent volume at
-all — nothing to migrate, WIP pending a chart that has one.
+doesn't take on. `Memcached`'s current chart ships with no persistent volume
+at all — nothing to migrate, WIP pending a chart that has one.
 
 ---
 
