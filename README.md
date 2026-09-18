@@ -428,19 +428,19 @@ the fallback for a kind with no CRD of its own), then `✅`/`WIP`/`excluded`.
 | `Airflow` | generic · WIP | `Alertmanager` | 3 · WIP |
 | `ArangoDB` | generic · WIP | `Artifactory` | generic · WIP |
 | `CassandraDatacenter` | 2 · ✅ | `CephCluster` (Rook) | excluded |
-| `ClickHouseInstallation` | 1 · WIP | `Cluster` (CloudNativePG) | 2 · WIP |
+| `ClickHouseInstallation` | 1 · WIP | `Cluster` (CloudNativePG) | 1 · WIP |
 | `CouchDB` | generic · ✅ | `CouchbaseCluster` | 2 · WIP |
 | `CrdbCluster` (CockroachDB) | 2 · ✅ | `Dragonfly` | 3 · ✅ |
 | `Elasticsearch` | 3 · WIP | `EtcdCluster` | 3 · WIP |
-| `Gitea` | generic · WIP | `Harbor` | generic · WIP |
+| `Gitea` | generic · ✅ | `Harbor` | generic · WIP |
 | `Hazelcast` | 3 · WIP | `InfluxDB` | generic · WIP |
 | `InnoDBCluster` (Oracle) | 2 · WIP | `Jenkins` | generic · WIP |
 | `KafkaNodePool` | 2/3 · WIP | `Keycloak` | 3 · WIP |
 | `MariaDB` | 3 · ✅ | `Memcached` | — · WIP (chart has no volume) |
-| `Milvus` | 3 · WIP | `MongoDB` | 3 · WIP |
+| `Milvus` | 3 · ✅ | `MongoDB` | 3 · WIP |
 | `MongoDBCommunity` | 3 · WIP | `MySQLCluster` (MOCO) | 1 · ✅ |
 | `MysqlCluster` (Presslabs) | 3 · WIP | `NATS` | generic · ✅ |
-| `Neo4j` | generic · WIP | `NexusRepo` | 3 · WIP |
+| `Neo4j` | generic · ✅ | `NexusRepo` | 3 · WIP |
 | `OpenSearchCluster` | 3 · WIP | `PerconaServerMongoDB` | 3 · ✅ |
 | `PerconaXtraDBCluster` | 3 · ✅ | `PostgresCluster` | 2 · WIP |
 | `Prometheus` | 3 · WIP | `Pulsar` | generic · WIP |
@@ -453,7 +453,7 @@ the fallback for a kind with no CRD of its own), then `✅`/`WIP`/`excluded`.
 | `VirtualMachine` (KubeVirt) | 4 · ✅ | `VMCluster` | 3 · WIP |
 | `ZookeeperCluster` | 2 · WIP | `postgresql` (Zalando) | 3 · ✅ |
 
-**14 ✅ today**, measured clean end to end against real clusters, not read off
+**17 ✅ today**, measured clean end to end against real clusters, not read off
 a spec sheet. `KafkaNodePool` and `SolrCloud` show two vías because neither
 one alone stops them — both were tried, both need work.
 
@@ -465,13 +465,22 @@ one confirmed case of Vía 1 working exactly as designed: a dedicated
 `spec.offline` field, not a replica count. `Gitea`, `CouchDB`, `Neo4j`,
 `ArangoDB`, `InfluxDB`, `Harbor`, `Pulsar`, `Artifactory`, `Jenkins` and
 `Airflow` aren't in the registry — most fall back to the generic
-unknown-operator path (scale directly, said out loud); `CouchDB` and `NATS`
-are already confirmed there. `CephCluster` (Rook) is excluded on purpose:
-storage infrastructure, like Trident itself — not something this product
-migrates. `Vault` is excluded on purpose too: migrating its Raft store
-underneath it is a correctness risk the catalog doesn't take on. `Memcached`'s
-current chart ships with no persistent volume at all — nothing to migrate,
-WIP pending a chart that has one.
+unknown-operator path (scale directly, said out loud); `CouchDB`, `NATS`,
+`Gitea` and `Neo4j` are already confirmed there. `CephCluster` (Rook) is
+excluded on purpose: storage infrastructure, like Trident itself — not
+something this product migrates. `Vault` is excluded on purpose too:
+migrating its Raft store underneath it is a correctness risk the catalog
+doesn't take on — measured against real hardware, the storage move itself
+completes clean, but the sealed/initialized state is identical before and
+after (Vault needs its own Shamir unseal regardless, by design), so a "clean
+copy" here still isn't a working handoff.
+`Milvus` (registry entry `via 3`) shows the same pattern as `TemporalCluster`:
+the CR's own patch never fires because its state lives in dependencies
+(etcd, MinIO) with no PVC of their own, not in the component the patch
+targets — but the real namespace migration, through those dependencies'
+volumes, completes clean end to end. `Memcached`'s current chart ships with
+no persistent volume at all — nothing to migrate, WIP pending a chart that
+has one.
 
 ---
 
