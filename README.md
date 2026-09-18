@@ -330,8 +330,12 @@ migration the other way, and says so before doing anything.
 
 |  |  |
 |---|---|
-| ![Dashboard: cluster overview with migration counts, PVC/pod/StorageClass state and Trident backends](docs/img/web-dashboard.png) | ![Migration plan: every volume with the methods it could take, ranked, and the reason for each](docs/img/web-planner.png) |
-| ![New Migration wizard, pre-flight step](docs/img/web-new-migration-preflight.png) | ![Migration history: a completed run's phase-by-phase window](docs/img/web-reports.png) |
+| ![Dashboard: cluster overview with migration counts, PVC/pod/StorageClass state and Trident backends](docs/img/web-dashboard.png) | ![Cluster Map: every namespace as a node, coloured by migration state](docs/img/web-cluster-map.png) |
+| ![Assessment: which mode each namespace's volumes should take, and why — before anything is installed](docs/img/web-assessment.png) | ![New Migration: the six ways to move data, picked per namespace](docs/img/web-new-migration.png) |
+| ![SnapMirror: ONTAP-to-ONTAP replication, connection profiles and cutover grouping](docs/img/web-snapmirror.png) | ![Migrations: every run this cluster has been through, live or finished](docs/img/web-migrations.png) |
+| ![A migration in progress: phase tracker, pods and PVCs, live log](docs/img/web-migration-detail.png) | ![Migration history: a completed run's phase-by-phase window, byte counts and validation per volume](docs/img/web-reports.png) |
+| ![Cluster Explorer — Operators: every operator controller in the cluster, its CRs and its migration method](docs/img/web-operators.png) | ![Cleanup: released and orphaned volumes left behind by past migrations, reclaim policy called out per row](docs/img/web-cleanup.png) |
+| ![Settings: .env status, licence, product version and commit, cluster health](docs/img/web-settings.png) | |
 
 | Page | Path | For |
 |---|---|---|
