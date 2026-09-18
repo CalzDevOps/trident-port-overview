@@ -420,51 +420,58 @@ table — nothing held out as a footnote.
 decision, explained below · everything else is `WIP` — being worked, in
 progress, or waiting on a decision, never presented as broken.
 
-| Kind | Status | Kind | Status |
+Each cell is **vía · status** — which of the four ways applies (or `generic`,
+the fallback for a kind with no CRD of its own), then `✅`/`WIP`/`excluded`.
+
+| Kind | Vía · Status | Kind | Vía · Status |
 |---|---|---|---|
-| `Airflow` | WIP | `Alertmanager` | WIP |
-| `ArangoDB` | WIP | `Artifactory` | WIP |
-| `CassandraDatacenter` | ✅ | `CephCluster` (Rook) | excluded |
-| `ClickHouseInstallation` | WIP | `Cluster` (CloudNativePG) | WIP |
-| `CouchDB` | ✅ | `CouchbaseCluster` | WIP |
-| `CrdbCluster` (CockroachDB) | ✅ | `Dragonfly` | ✅ |
-| `Elasticsearch` | WIP | `EtcdCluster` | WIP |
-| `Gitea` | WIP | `Harbor` | WIP |
-| `Hazelcast` | WIP | `InfluxDB` | WIP |
-| `InnoDBCluster` (Oracle) | WIP | `Jenkins` | WIP |
-| `KafkaNodePool` | WIP | `Keycloak` | WIP |
-| `MariaDB` | ✅ | `Memcached` | WIP |
-| `Milvus` | WIP | `MongoDB` | WIP |
-| `MongoDBCommunity` | WIP | `MySQLCluster` (MOCO) | ✅ |
-| `MysqlCluster` (Presslabs) | WIP | `NATS` | ✅ |
-| `Neo4j` | WIP | `NexusRepo` | WIP |
-| `OpenSearchCluster` | WIP | `PerconaServerMongoDB` | ✅ |
-| `PerconaXtraDBCluster` | ✅ | `PostgresCluster` | WIP |
-| `Prometheus` | WIP | `Pulsar` | WIP |
-| `RabbitmqCluster` | ✅ | `RedisCluster` | WIP |
-| `RedisEnterpriseCluster` | WIP | `RedisFailover` | WIP |
-| `ScyllaCluster` | WIP | `Seaweed` | ✅ |
-| `SolrCloud` | WIP | `TemporalCluster` | ✅ |
-| `Tenant` (MinIO) | WIP | `TidbCluster` | WIP |
-| `Valkey` | WIP | `Vault` | excluded |
-| `VirtualMachine` (KubeVirt) | ✅ | `VMCluster` | WIP |
-| `ZookeeperCluster` | WIP | `postgresql` (Zalando) | ✅ |
+| `Airflow` | generic · WIP | `Alertmanager` | 3 · WIP |
+| `ArangoDB` | generic · WIP | `Artifactory` | generic · WIP |
+| `CassandraDatacenter` | 2 · ✅ | `CephCluster` (Rook) | excluded |
+| `ClickHouseInstallation` | 1 · WIP | `Cluster` (CloudNativePG) | 2 · WIP |
+| `CouchDB` | generic · ✅ | `CouchbaseCluster` | 2 · WIP |
+| `CrdbCluster` (CockroachDB) | 2 · ✅ | `Dragonfly` | 3 · ✅ |
+| `Elasticsearch` | 3 · WIP | `EtcdCluster` | 3 · WIP |
+| `Gitea` | generic · WIP | `Harbor` | generic · WIP |
+| `Hazelcast` | 3 · WIP | `InfluxDB` | generic · WIP |
+| `InnoDBCluster` (Oracle) | 2 · WIP | `Jenkins` | generic · WIP |
+| `KafkaNodePool` | 2/3 · WIP | `Keycloak` | 3 · WIP |
+| `MariaDB` | 3 · ✅ | `Memcached` | — · WIP (chart has no volume) |
+| `Milvus` | 3 · WIP | `MongoDB` | 3 · WIP |
+| `MongoDBCommunity` | 3 · WIP | `MySQLCluster` (MOCO) | 1 · ✅ |
+| `MysqlCluster` (Presslabs) | 3 · WIP | `NATS` | generic · ✅ |
+| `Neo4j` | generic · WIP | `NexusRepo` | 3 · WIP |
+| `OpenSearchCluster` | 3 · WIP | `PerconaServerMongoDB` | 3 · ✅ |
+| `PerconaXtraDBCluster` | 3 · ✅ | `PostgresCluster` | 2 · WIP |
+| `Prometheus` | 3 · WIP | `Pulsar` | generic · WIP |
+| `RabbitmqCluster` | 3 · ✅ | `RedisCluster` | 3 · WIP |
+| `RedisEnterpriseCluster` | 3 · WIP | `RedisFailover` | 3 · WIP |
+| `ScyllaCluster` | 3 · WIP | `Seaweed` | 2 · ✅ |
+| `SolrCloud` | 3/2 · WIP | `TemporalCluster` | 2 · ✅ |
+| `Tenant` (MinIO) | 3 · WIP | `TidbCluster` | 3 · WIP |
+| `Valkey` | 3 · WIP | `Vault` | excluded |
+| `VirtualMachine` (KubeVirt) | 4 · ✅ | `VMCluster` | 3 · WIP |
+| `ZookeeperCluster` | 2 · WIP | `postgresql` (Zalando) | 3 · ✅ |
 
 **14 ✅ today**, measured clean end to end against real clusters, not read off
-a spec sheet.
+a spec sheet. `KafkaNodePool` and `SolrCloud` show two vías because neither
+one alone stops them — both were tried, both need work.
 
 `VirtualMachine`'s disk moves through its own dedicated DataVolume swap
 (`tp compat kv-dv-swap.sh swap <ns> <vm> <datavolume> <target-pv> <target-sc>`),
-not the generic CR patch — measured end to end, including data surviving
-inside the guest. `Gitea`, `CouchDB`, `Neo4j`, `ArangoDB`, `InfluxDB`, `Harbor`,
-`Pulsar`, `Artifactory`, `Jenkins` and `Airflow` aren't in the registry — most
-fall back to the generic unknown-operator path (scale directly, said out
-loud); `CouchDB` and `NATS` are already confirmed there. `CephCluster` (Rook)
-is excluded on purpose: storage infrastructure, like Trident itself — not
-something this product migrates. `Vault` is excluded on purpose too:
-migrating its Raft store underneath it is a correctness risk the catalog
-doesn't take on. `Memcached`'s current chart ships with no persistent volume
-at all — nothing to migrate, WIP pending a chart that has one.
+Vía 4's shape, not the CR patch its registry entry declares — measured end to
+end, including data surviving inside the guest. `MySQLCluster` (MOCO) is the
+one confirmed case of Vía 1 working exactly as designed: a dedicated
+`spec.offline` field, not a replica count. `Gitea`, `CouchDB`, `Neo4j`,
+`ArangoDB`, `InfluxDB`, `Harbor`, `Pulsar`, `Artifactory`, `Jenkins` and
+`Airflow` aren't in the registry — most fall back to the generic
+unknown-operator path (scale directly, said out loud); `CouchDB` and `NATS`
+are already confirmed there. `CephCluster` (Rook) is excluded on purpose:
+storage infrastructure, like Trident itself — not something this product
+migrates. `Vault` is excluded on purpose too: migrating its Raft store
+underneath it is a correctness risk the catalog doesn't take on. `Memcached`'s
+current chart ships with no persistent volume at all — nothing to migrate,
+WIP pending a chart that has one.
 
 ---
 
