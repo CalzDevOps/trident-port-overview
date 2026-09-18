@@ -370,10 +370,13 @@ letter and this project has confused them before.
 
 A StatefulSet owned by an operator must be stopped **through its CR**, or the
 operator puts it back — measured, it undoes a scale in under a second. Detection is
-by `ownerReferences` and CR name; the registry holds **37 kinds** (PostgreSQL,
+by `ownerReferences` and CR name; the registry holds **40 kinds** (PostgreSQL,
 MongoDB, MySQL/MariaDB, Kafka, Elasticsearch, OpenSearch, Redis, Valkey, Cassandra,
 ScyllaDB, CockroachDB, TiDB, ClickHouse, Couchbase, MinIO, etcd, RabbitMQ,
-Prometheus and the rest).
+Prometheus and the rest) — three of them, Keycloak, NexusRepo and Hazelcast, are
+**unverified**: a static read of the operator's published CRD, never deployed or
+patched against a live cluster, and marked as such in the registry so it can't be
+shown green by accident.
 
 ```mermaid
 flowchart TD
@@ -382,7 +385,7 @@ flowchart TD
     C -->|yes| D[scale generically,<br/>said out loud]
     C -->|no| E[STOP AND WARN<br/>never a blind scale]
     B --> F{Does the CRD refuse<br/>replicas: 0?}
-    F -->|12 of the 37 do| G[scale the workload directly<br/>— needs --hold-operator]
+    F -->|11 of the 40 do| G[scale the workload directly<br/>— needs --hold-operator]
     F -->|no| H[patch the CR]
     style E fill:#ef6c00,color:#fff
 ```
@@ -394,6 +397,56 @@ restoring *that* would report success onto a namespace that never comes back.
 
 An operator serving *other* namespaces is never suspended on our authority:
 `--hold-operator` is you agreeing nothing reconciles there for the window.
+
+### The four ways to stop an operator's workload
+
+1. **Native pause, by CR** — a dedicated pause field (`spec.offline`, `spec.stop`).
+2. **Hold the operator** — its Deployment to 0, StatefulSet scaled by hand underneath.
+3. **Zero, by CR** — patch the CR's own replica field, operator scales itself down.
+4. **Orphan + PV Retain** — delete the owner, PV already `Retain`. Last resort; wired
+   for KubeVirt only today.
+
+### Vía per kind, measured against real clusters
+
+`✅` measured clean · `❌` measured, failed · `⛔` blocked (RBAC or the operator
+itself) · no mark = predicted from the registry's own `refuses_zero`, not yet run.
+
+| Kind | Vía | Kind | Vía |
+|---|---|---|---|
+| `Alertmanager` | 3 | `MongoDB` | 3 |
+| `CassandraDatacenter` | 2 ✅ | `MongoDBCommunity` | 3 |
+| `ClickHouseInstallation` | 1 | `MySQLCluster` (MOCO) | 1 ✅ |
+| `Cluster` (CloudNativePG) | 2 | `MysqlCluster` (Presslabs) | 3 ❌ |
+| `CouchbaseCluster` | 2 | `NexusRepo` | 3 |
+| `CrdbCluster` (CockroachDB) | 2 ✅ | `OpenSearchCluster` | ⛔ (lab) |
+| `Dragonfly` | 1 ✅ | `PerconaServerMongoDB` | 1 ✅ |
+| `Elasticsearch` | 3, webhook-refused | `PerconaXtraDBCluster` | 3 ✅ |
+| `EtcdCluster` | ⛔ RBAC | `PostgresCluster` | 2 |
+| `Hazelcast` | 3 | `Prometheus` | 3 |
+| `InnoDBCluster` (Oracle) | 3, cutover partial | `RabbitmqCluster` | 3 ✅ |
+| `KafkaNodePool` | 2 ❌ / 3 ❌ | `RedisCluster` | ⛔ operator never creates the PVC |
+| `Keycloak` | 3 | `RedisEnterpriseCluster` | 3 |
+| `MariaDB` | 3 ✅ | `RedisFailover` | 1 ❌ |
+| `Milvus` | 3 | `ScyllaCluster` | ⛔ RBAC (internal CRD) |
+| `Seaweed` | 2 ✅ | `SolrCloud` | 1 ❌ / 2 ❌ |
+| `TemporalCluster` | 2, workload has no PVC of its own — never fires | `Tenant` (MinIO) | 3, field is CEL-immutable |
+| `TidbCluster` | 3, whole-CR patch can fail atomically if an optional component block is absent | `VMCluster` | 3, partial |
+| `Valkey` | 1 ❌ | `VirtualMachine` (KubeVirt) | 4 ✅ — dedicated tool, not the CR patch above |
+| `ZookeeperCluster` | 2 | `postgresql` (Zalando) | 3 ✅ |
+
+`VirtualMachine`'s registry entry (`spec.running`) is a fallback stop check, not how
+a migration actually runs: a KubeVirt VM's disk moves through its own DataVolume
+swap (`tp compat kv-dv-swap.sh swap <ns> <vm> <datavolume> <target-pv>
+<target-sc>`) — orphan the DataVolume with its PV already `Retain`, the same shape
+as Vía 4, measured end to end including data surviving inside the guest.
+
+14 more kinds are researched but not shipped in the registry: Gitea, CouchDB,
+Neo4j, ArangoDB, InfluxDB, Harbor, NATS, Pulsar, Artifactory, Jenkins, Airflow and
+Memcached fall back to the generic unknown-operator path, untested against a live
+cluster. `CephCluster` (Rook) is excluded on purpose — storage infrastructure, like
+Trident itself, not something this product migrates. `Vault` is excluded too:
+migrating its Raft store underneath it is a correctness risk the catalog doesn't
+take on.
 
 ---
 
