@@ -412,45 +412,46 @@ An operator serving *other* namespaces is never suspended on our authority:
 
 ### Vía per kind, measured against real clusters
 
-`✅` measured clean · `❌` measured, failed · `⛔` blocked (RBAC or the operator
-itself) · no mark = predicted from the registry's own `refuses_zero`, not yet run.
+`✅` supported, measured clean end to end · everything else is `WIP` — being
+worked, in progress, or waiting on a decision, never presented as broken.
 
-| Kind | Vía | Kind | Vía |
+| Kind | Status | Kind | Status |
 |---|---|---|---|
-| `Alertmanager` | 3 | `MongoDB` | 3 |
-| `CassandraDatacenter` | 2 ✅ | `MongoDBCommunity` | 3 |
-| `ClickHouseInstallation` | 1 | `MySQLCluster` (MOCO) | 1 ✅ |
-| `Cluster` (CloudNativePG) | 2 | `MysqlCluster` (Presslabs) | 3 ❌ |
-| `CouchbaseCluster` | 2 | `NexusRepo` | 3 |
-| `CrdbCluster` (CockroachDB) | 2 ✅ | `OpenSearchCluster` | ⛔ (lab) |
-| `Dragonfly` | 1 ✅ | `PerconaServerMongoDB` | 1 ✅ |
-| `Elasticsearch` | 3, webhook-refused | `PerconaXtraDBCluster` | 3 ✅ |
-| `EtcdCluster` | ⛔ RBAC | `PostgresCluster` | 2 |
-| `Hazelcast` | 3 | `Prometheus` | 3 |
-| `InnoDBCluster` (Oracle) | 3, cutover partial | `RabbitmqCluster` | 3 ✅ |
-| `KafkaNodePool` | 2 ❌ / 3 ❌ | `RedisCluster` | ⛔ operator never creates the PVC |
-| `Keycloak` | 3 | `RedisEnterpriseCluster` | 3 |
-| `MariaDB` | 3 ✅ | `RedisFailover` | 1 ❌ |
-| `Milvus` | 3 | `ScyllaCluster` | ⛔ RBAC (internal CRD) |
-| `Seaweed` | 2 ✅ | `SolrCloud` | 1 ❌ / 2 ❌ |
-| `TemporalCluster` | 2, workload has no PVC of its own — never fires | `Tenant` (MinIO) | 3, field is CEL-immutable |
-| `TidbCluster` | 3, whole-CR patch can fail atomically if an optional component block is absent | `VMCluster` | 3, partial |
-| `Valkey` | 1 ❌ | `VirtualMachine` (KubeVirt) | 4 ✅ — dedicated tool, not the CR patch above |
-| `ZookeeperCluster` | 2 | `postgresql` (Zalando) | 3 ✅ |
+| `Alertmanager` | WIP | `MongoDB` | WIP |
+| `CassandraDatacenter` | ✅ | `MongoDBCommunity` | WIP |
+| `ClickHouseInstallation` | WIP | `MySQLCluster` (MOCO) | ✅ |
+| `Cluster` (CloudNativePG) | WIP | `MysqlCluster` (Presslabs) | WIP |
+| `CouchbaseCluster` | WIP | `NexusRepo` | WIP |
+| `CrdbCluster` (CockroachDB) | ✅ | `OpenSearchCluster` | WIP |
+| `Dragonfly` | ✅ | `PerconaServerMongoDB` | ✅ |
+| `Elasticsearch` | WIP | `PerconaXtraDBCluster` | ✅ |
+| `EtcdCluster` | WIP | `PostgresCluster` | WIP |
+| `Hazelcast` | WIP | `Prometheus` | WIP |
+| `InnoDBCluster` (Oracle) | WIP | `RabbitmqCluster` | ✅ |
+| `KafkaNodePool` | WIP | `RedisCluster` | WIP |
+| `Keycloak` | WIP | `RedisEnterpriseCluster` | WIP |
+| `MariaDB` | ✅ | `RedisFailover` | WIP |
+| `Milvus` | WIP | `ScyllaCluster` | WIP |
+| `Seaweed` | ✅ | `SolrCloud` | WIP |
+| `TemporalCluster` | WIP | `Tenant` (MinIO) | WIP |
+| `TidbCluster` | WIP | `VMCluster` | WIP |
+| `Valkey` | WIP | `VirtualMachine` (KubeVirt) | ✅ |
+| `ZookeeperCluster` | WIP | `postgresql` (Zalando) | ✅ |
 
-`VirtualMachine`'s registry entry (`spec.running`) is a fallback stop check, not how
-a migration actually runs: a KubeVirt VM's disk moves through its own DataVolume
-swap (`tp compat kv-dv-swap.sh swap <ns> <vm> <datavolume> <target-pv>
-<target-sc>`) — orphan the DataVolume with its PV already `Retain`, the same shape
-as Vía 4, measured end to end including data surviving inside the guest.
+`VirtualMachine`'s disk moves through its own dedicated DataVolume swap
+(`tp compat kv-dv-swap.sh swap <ns> <vm> <datavolume> <target-pv> <target-sc>`),
+not the generic CR patch — measured end to end, including data surviving
+inside the guest.
 
-14 more kinds are researched but not shipped in the registry: Gitea, CouchDB,
-Neo4j, ArangoDB, InfluxDB, Harbor, NATS, Pulsar, Artifactory, Jenkins, Airflow and
-Memcached fall back to the generic unknown-operator path, untested against a live
-cluster. `CephCluster` (Rook) is excluded on purpose — storage infrastructure, like
+14 more kinds are researched but not shipped in the registry — most fall back
+to the generic unknown-operator path (scale directly, said out loud): Gitea,
+CouchDB, Neo4j, ArangoDB, InfluxDB, Harbor, Pulsar, Artifactory, Jenkins,
+Airflow. **NATS** is already confirmed **✅** on that same generic path.
+`CephCluster` (Rook) is excluded on purpose — storage infrastructure, like
 Trident itself, not something this product migrates. `Vault` is excluded too:
-migrating its Raft store underneath it is a correctness risk the catalog doesn't
-take on.
+migrating its Raft store underneath it is a correctness risk the catalog
+doesn't take on. Memcached's current chart ships with no persistent volume at
+all — nothing to migrate, WIP pending a chart that has one.
 
 ---
 
