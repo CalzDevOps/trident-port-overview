@@ -437,12 +437,12 @@ the fallback for a kind with no CRD of its own), then `✅`/`WIP`/`excluded`.
 | `InnoDBCluster` (Oracle) | 2 · WIP | `Jenkins` | generic · WIP |
 | `KafkaNodePool` | 2/3 · WIP | `Keycloak` | 3 · WIP |
 | `MariaDB` | 3 · ✅ | `Memcached` | — · WIP (chart has no volume) |
-| `Milvus` | 3 · ✅ | `MongoDB` | 3 · WIP |
+| `Milvus` | 3 · ✅ | `MongoDB` | 3 · WIP (third-party licence required) |
 | `MongoDBCommunity` | 3 · WIP | `MySQLCluster` (MOCO) | 1 · ✅ |
 | `MysqlCluster` (Presslabs) | 3 · ✅ | `NATS` | generic · ✅ |
 | `Neo4j` | generic · ✅ | `NexusRepo` | 3 · WIP |
 | `OpenSearchCluster` | 3 · WIP | `PerconaServerMongoDB` | 3 · ✅ |
-| `PerconaXtraDBCluster` | 3 · ✅ | `PostgresCluster` | 2 · WIP |
+| `PerconaXtraDBCluster` | 3 · ✅ | `PostgresCluster` | 2 · WIP (third-party licence required) |
 | `Prometheus` | 3 · WIP | `Pulsar` | generic · WIP |
 | `RabbitmqCluster` | 3 · ✅ | `RedisCluster` | 3 · WIP |
 | `RedisEnterpriseCluster` | 3 · WIP | `RedisFailover` | 3 · WIP |
