@@ -488,20 +488,21 @@ dedicated CRD path) alongside its validation status.
 | `PerconaXtraDBCluster` | 3 · ✅ | `Prometheus` | 3 · WIP |
 | `Pulsar` | generic · WIP | `RabbitmqCluster` | 3 · ✅ |
 | `RedisCluster` | 3 · WIP | `RedisEnterpriseCluster` | 3 · WIP |
-| `RedisFailover` | 3 · WIP | `ScyllaCluster` | 3 · WIP |
-| `Seaweed` | 2 · ✅ | `SolrCloud` | 3/2 · WIP |
-| `TemporalCluster` | 2 · ✅ | `Tenant` (MinIO) | 3 · WIP |
-| `TidbCluster` | 3 · WIP | `Valkey` | 3 · WIP |
-| `Vault` | excluded | `VirtualMachine` (KubeVirt) | 4 · ✅ |
-| `VMCluster` | 1 · ✅ | `ZookeeperCluster` | 2 · WIP |
-| `postgresql` (Zalando) | 3 · ✅ | | |
+| `ScyllaCluster` | 3 · WIP | `Seaweed` | 2 · ✅ |
+| `SolrCloud` | 3/2 · WIP | `TemporalCluster` | 2 · ✅ |
+| `Tenant` (MinIO) | 3 · WIP | `TidbCluster` | 3 · WIP |
+| `Valkey` | 3 · WIP | `Vault` | excluded |
+| `VirtualMachine` (KubeVirt) | 4 · ✅ | `VMCluster` | 1 · ✅ |
+| `ZookeeperCluster` | 2 · WIP | `postgresql` (Zalando) | 3 · ✅ |
 
 **21 validated, production-ready paths**, each measured clean end to end against a
 real cluster. `KafkaNodePool` and `SolrCloud` list two mechanisms because neither
 alone stops them fully — both have been evaluated, and both remain active work.
 Kinds requiring a third-party licensed operator to validate (MongoDB Enterprise,
 CrunchyData PostgreSQL Operator, Sonatype Nexus Repository via Red Hat Connect) are
-tracked separately and engaged on a per-opportunity basis.
+tracked separately and engaged on a per-opportunity basis. One kind (RedisFailover,
+via the Spotahome operator) is omitted here as its upstream project is no longer
+maintained.
 
 `VirtualMachine`'s disk migrates through its own dedicated DataVolume swap
 (`tp compat kv-dv-swap.sh swap <ns> <vm> <datavolume> <target-pv> <target-sc>`),
