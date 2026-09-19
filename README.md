@@ -426,20 +426,20 @@ the fallback for a kind with no CRD of its own), then `✅`/`WIP`/`excluded`.
 | Kind | Vía · Status | Kind | Vía · Status |
 |---|---|---|---|
 | `Airflow` | generic · WIP | `Alertmanager` | 3 · WIP |
-| `ArangoDB` | generic · WIP | `Artifactory` | generic · WIP |
+| `ArangoDB` | generic · WIP | `Artifactory` | generic · ✅ |
 | `CassandraDatacenter` | 2 · ✅ | `CephCluster` (Rook) | excluded |
 | `ClickHouseInstallation` | 1 · WIP | `Cluster` (CloudNativePG) | 1 · WIP |
 | `CouchDB` | generic · ✅ | `CouchbaseCluster` | 2 · WIP |
 | `CrdbCluster` (CockroachDB) | 2 · ✅ | `Dragonfly` | 3 · ✅ |
 | `Elasticsearch` | 3 · WIP | `EtcdCluster` | 3 · WIP |
-| `Gitea` | generic · ✅ | `Harbor` | generic · WIP |
+| `Gitea` | generic · ✅ | `Harbor` | generic · ✅ |
 | `Hazelcast` | 3 · WIP | `InfluxDB` | generic · WIP |
 | `InnoDBCluster` (Oracle) | 2 · WIP | `Jenkins` | generic · WIP |
 | `KafkaNodePool` | 2/3 · WIP | `Keycloak` | 3 · WIP |
 | `MariaDB` | 3 · ✅ | `Memcached` | — · WIP (chart has no volume) |
 | `Milvus` | 3 · ✅ | `MongoDB` | 3 · WIP |
 | `MongoDBCommunity` | 3 · WIP | `MySQLCluster` (MOCO) | 1 · ✅ |
-| `MysqlCluster` (Presslabs) | 3 · WIP | `NATS` | generic · ✅ |
+| `MysqlCluster` (Presslabs) | 3 · ✅ | `NATS` | generic · ✅ |
 | `Neo4j` | generic · ✅ | `NexusRepo` | 3 · WIP |
 | `OpenSearchCluster` | 3 · WIP | `PerconaServerMongoDB` | 3 · ✅ |
 | `PerconaXtraDBCluster` | 3 · ✅ | `PostgresCluster` | 2 · WIP |
@@ -450,10 +450,10 @@ the fallback for a kind with no CRD of its own), then `✅`/`WIP`/`excluded`.
 | `SolrCloud` | 3/2 · WIP | `TemporalCluster` | 2 · ✅ |
 | `Tenant` (MinIO) | 3 · WIP | `TidbCluster` | 3 · WIP |
 | `Valkey` | 3 · WIP | `Vault` | excluded |
-| `VirtualMachine` (KubeVirt) | 4 · ✅ | `VMCluster` | 3 · WIP |
+| `VirtualMachine` (KubeVirt) | 4 · ✅ | `VMCluster` | 1 · ✅ |
 | `ZookeeperCluster` | 2 · WIP | `postgresql` (Zalando) | 3 · ✅ |
 
-**17 ✅ today**, measured clean end to end against real clusters, not read off
+**21 ✅ today**, measured clean end to end against real clusters, not read off
 a spec sheet. `KafkaNodePool` and `SolrCloud` show two vías because neither
 one alone stops them — both were tried, both need work.
 
