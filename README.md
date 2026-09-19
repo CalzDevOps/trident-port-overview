@@ -259,6 +259,21 @@ most once per run, and only when an import was actually refused**; `--no-trident
 disables this behavior, stopping the cutover at the first refused import with
 remediation steps provided.
 
+**Interface access is authenticated and scoped to a single deployment.** The default
+Service is `ClusterIP`; the API runs with the deployment's own RBAC, so an
+`X-Trident-Port-Token` header (generated and persisted at install time, validated in
+constant time) is required on every request except health checks, static assets and
+the activation screen.
+
+**Licence entitlement is bound to the target cluster's identity** (its `kube-system`
+namespace UID) and does not transfer if the token is copied to another cluster.
+Completed migrations are recorded in a signed usage ledger (HMAC), protecting the
+integrity of the usage count independent of the cluster operator.
+
+**Every operation is auditable.** `/metrics` exposes Prometheus-format migration
+counts, licence status and audit counters; `tracking/trace.jsonl` is an append-only,
+SIEM-ready record of the CLI and web interface, including every refusal.
+
 ---
 
 ## Command Reference
@@ -565,6 +580,85 @@ an intentional design decision from data loss.
   and the web interface, including every refusal. Suitable for SIEM ingestion.
 - **`tracking/sessions/<id>/`** — the plan, per-phase logs and trace for every run;
   the basis of a support bundle.
+
+---
+
+## Troubleshooting and Expected Results
+
+| Situation | Observed Behavior | Resolution |
+|---|---|---|
+| A second run against a namespace already migrating | Refused: a migration of that namespace is already in progress | By design — concurrent runs on one namespace would overwrite each other's copy in progress. Wait for completion, or follow the active session |
+| `tp auto` against an infrastructure namespace | Declined by default, requiring `--i-know-this-is-infrastructure` | Stopping workloads where storage itself runs can remove volumes rather than quiesce them. Requires explicit acknowledgment |
+| A namespace under active Argo CD/Flux reconciliation | Declined, naming the owning resource and the exact suspend command | `--allow-gitops` is the documented override, with both associated risks stated |
+| `--dry-run` performs no changes | Enforced at the engine level | Any state change during a rehearsal is treated as a defect |
+| A long-running copy shows no progress percentage | A status line is emitted on a fixed interval, with elapsed time and the exact command to follow the live log | rsync-based transfers cannot produce a reliable ETA; progress is reported by interval instead |
+| OpenShift rejects the copy pod | Pod unschedulable under `restricted-v2` | Do not request `privileged` — the remediation the product prints is `oc adm policy add-scc-to-user anyuid` |
+| A generic Kubernetes namespace under `PodSecurity: restricted` rejects the copy pod | Same failure class as the OpenShift case, on a different platform | The product prints the exact remediation: `kubectl label ns <ns> pod-security.kubernetes.io/enforce=baseline --overwrite` |
+| `Forbidden` on a newly onboarded operator's CRD | That operator is not yet declared in the product's `ClusterRole` | RBAC is granted per operator, by explicit rule — never a wildcard. A new operator kind requires that rule before this product can manage it |
+
+**A successful migration** is confirmed when `tp validate` agrees with the
+byte-level checksum comparison, the migration report shows all cutover phases
+with measured durations, and a complete session record exists under
+`tracking/sessions/<id>/`, including its plan, per-phase log and rollback script.
+
+---
+
+## Support
+
+- **`tp support-bundle`** produces a complete diagnostic archive (logs, trace,
+  session state) for submission to support.
+- Before contacting support, capture the active session (`tp sessions --session
+  <id> --follow`) and the exact error text — the majority of conditions in the
+  table above are self-resolving with that information alone.
+- Contact your NetApp account team or supporting partner for engagement-specific
+  support channels.
+
+---
+
+## Prerequisites and Best Practices
+
+Beyond the environment requirements above, the following should be confirmed
+ahead of a migration window rather than discovered during one:
+
+- **RBAC, and on OpenShift the appropriate SCC exception, applied in advance** —
+  on OpenShift, `oc adm policy add-scc-to-user anyuid` (never request
+  `privileged`: rejected under `restricted-v2` by design); on a generic cluster
+  enforcing `PodSecurity: restricted`, the `baseline` label the product itself
+  documents.
+- **A `VolumeSnapshotClass` registered with a driver matching the source
+  provisioner**, when the snapshot method is intended — the planning engine will
+  otherwise exclude it, but resolving this ahead of time avoids a mid-window
+  surprise.
+- **The destination `TridentBackendConfig` already in `Bound` state** before a
+  run begins.
+- **ONTAP credentials provisioned as a reachable Kubernetes Secret.**
+- **A registry pull secret present in every target namespace.**
+
+---
+
+## Performance and Sizing
+
+**Figures below are measured, not projected, and scoped to the environment in
+which they were captured.** From validation against a vSphere CSI → Trident
+environment, one representative dataset:
+
+| Mode | Measured Cutover Window | Scales With Dataset Size |
+|---|---|---|
+| Offline copy | 155 s | Yes — the entire transfer occurs inside the window |
+| Snapshot | 65 s | No, predominantly fixed cost — only the final delta is inside the window |
+| Swap, per volume | 6 s floor | No — a pointer repoint, not a data transfer |
+
+- **Offline copy places the entire transfer inside the cutover window** — window
+  duration scales with dataset size.
+- **Snapshot and live-sync remove the bulk transfer from the cutover window** —
+  the window is dominated by the final delta, largely independent of total
+  volume size.
+- **SnapMirror cuts by FlexVol, not by individual claim** — on economy storage
+  classes, namespaces sharing a FlexVol are cut together in a single array
+  operation (see FlexVol-sharing behavior under [The Four Methods](#the-four-methods)).
+
+For sizing guidance specific to a customer's dataset and topology, engage your
+NetApp account team for a scoped assessment.
 
 ---
 
