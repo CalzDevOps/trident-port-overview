@@ -440,7 +440,7 @@ the fallback for a kind with no CRD of its own), then `✅`/`WIP`/`excluded`.
 | `Milvus` | 3 · ✅ | `MongoDB` | 3 · WIP (third-party licence required) |
 | `MongoDBCommunity` | 3 · WIP | `MySQLCluster` (MOCO) | 1 · ✅ |
 | `MysqlCluster` (Presslabs) | 3 · ✅ | `NATS` | generic · ✅ |
-| `Neo4j` | generic · ✅ | `NexusRepo` | 3 · WIP |
+| `Neo4j` | generic · ✅ | `NexusRepo` | 3 · WIP (third-party licence required) |
 | `OpenSearchCluster` | 3 · WIP | `PerconaServerMongoDB` | 3 · ✅ |
 | `PerconaXtraDBCluster` | 3 · ✅ | `PostgresCluster` | 2 · WIP (third-party licence required) |
 | `Prometheus` | 3 · WIP | `Pulsar` | generic · WIP |
