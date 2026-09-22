@@ -31,19 +31,22 @@ scheduled, bounded window rather than migrated live. What differs between method
 | **Snapshot** | `░░░░░░░░░░░░░░░░░░░░░░░█` |
 | **Live sync** | `█░░░░░░░░░░░░░░░░░░░░░░█` |
 | **SnapMirror** | `░░░░░░░░░░░░░░░░░░░░░░░█` |
+| **Block cutover** (`start`/`cutover`) | `█░░░░░░░░░░░░░░░░░░░░░░█` |
 
 `░` the application is up and serving · `█` it is down
 
 **Offline copy performs the entire transfer inside the cutover window** — the row is
-black from the first byte to the last. The other three methods move the transfer
+black from the first byte to the last. The other four methods move the transfer
 ahead of the window, at the cost of a prerequisite. **Live sync carries a second
 window at the start**: its `start` phase replaces every pod once to inject the sync
 sidecar, so that cost is paid up front and only the final delta remains in the
-cutover window.
+cutover window. **Block cutover's `start`/`cutover` shares that same shape** — a
+brief window to repoint the application onto the mirror, then a second brief window
+to switch once the resync is done.
 
 ---
 
-## The Four Methods
+## The Methods
 
 | Method | Application stopped for | Touches the array | Requires |
 |---|---|---|---|
@@ -51,6 +54,7 @@ cutover window.
 | **Snapshot** (`snapshot`) | the final delta only | no | a `VolumeSnapshotClass` whose driver matches the source provisioner, and a filesystem volume |
 | **Live sync** (`live-sync`) | the sidecar restart at `start`, then the final cut | no, but a continuous read on the source | Kubernetes 1.29+, a filesystem volume, and room to inject a sidecar |
 | **SnapMirror** (`snapmirror`) | the break and the mount | yes: the transfer competes with production I/O on the same aggregates | ONTAP at both ends, cluster peering, credentials on both |
+| **Block cutover** (`block-cutover`) | two brief windows (repoint, then switch) — or the switch only, without `start`/`cutover` | no, but a device-level resync on the node | a raw `Block` volume already on a node, and a destination claim |
 
 `tp import` adopts an existing NFS export into a Trident claim without copying it —
 the source is mounted read-only and never stopped.
@@ -82,6 +86,9 @@ unavailable because the source CSI driver does not register a VolumeSnapshotClas
 - **A given build may include a subset of these methods.** *"Not included in this
   build"* is distinct from *"the target cluster cannot support this."* Offline copy
   is always available.
+- **Block cutover is never selected automatically** — the only method above that the
+  planning engine skips; an operator names it directly. `tp mixed-cutover` coordinates
+  it with Live Sync when both are needed in the same namespace.
 
 ---
 
@@ -313,6 +320,8 @@ a validated licence.
 | `tp import` | brings a foreign NFS export into a Trident claim |
 | `tp cutover` | repoints claims to the new volumes |
 | `tp stop` | stops the workloads holding the claims |
+| `tp block-cutover` | mirrors a Block PVC's device to its destination and switches; `start`/`cutover` also repoint the application's own claim onto it |
+| `tp mixed-cutover` | `start`/`cutover` — the same repoint as `live-sync` and `block-cutover`, coordinated for both mixed in one namespace |
 
 ### A Namespace, End to End
 
@@ -357,6 +366,10 @@ tp live-sync cutover --namespace shop --pvc data-0 --dest-sc ontap-nas
 # SnapMirror, ONTAP to ONTAP. Plan first; the baseline runs with the application online.
 tp snapmirror --namespaces shop --dest-svm svm_new --plan-only
 tp snapmirror --namespaces shop --dest-svm svm_new --cutover-only
+
+# Block cutover: mirrors a raw Block device, then repoints the claim onto it.
+tp block-cutover start   --namespace shop --pvc data-0 --dest-sc ontap-san
+tp block-cutover cutover --namespace shop --resume <session-id>
 
 # Adopt an existing NFS export. The source is mounted read-only.
 tp import --namespace shop --server 10.0.0.5 --path /exports/archive \
@@ -408,7 +421,7 @@ This is stated explicitly before the operation executes.
 | Batch Migration | `/batch-migration` | multiple namespaces, sequential or parallel against a live capacity ceiling |
 | Space Race | `/space` | projects whether the source will fill before the baseline completes |
 | Cutover | `/cutover` | the swap, as an isolated operation |
-| Snapshot · Live Sync · SnapMirror | `/snapshot-migration` `/live-sync` `/snapmirror` | one page per method |
+| Snapshot · Live Sync · SnapMirror · Block Cutover | `/snapshot-migration` `/live-sync` `/snapmirror` `/block-cutover` | one page per method |
 | Import NFS | `/import-nfs` | adopt an external export |
 | Sessions | `/sessions` | every run, live or finished |
 | Migrations · Reports | `/history` `/reports` | migration history, one row per volume |
