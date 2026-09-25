@@ -330,7 +330,7 @@ matter.**
 
 ```bash
 helm show values oci://ghcr.io/calzdevops/charts/trident-port \
-  --version 0.2.46 > my-values.yaml
+  --version 0.2.47 > my-values.yaml
 ```
 
 You should now have a file `my-values.yaml`, a few hundred lines, starting
@@ -354,7 +354,7 @@ directly above it in the file — leave the rest alone for a first install.
 
 ```bash
 helm install trident-port oci://ghcr.io/calzdevops/charts/trident-port \
-  --version 0.2.46 \
+  --version 0.2.47 \
   --namespace trident-port --create-namespace \
   --values my-values.yaml
 ```
@@ -438,8 +438,8 @@ succeeds, read `docker logs trident-port` for the actual error.
 
 | You see | It means | Do this |
 |---|---|---|
-| `Error: path "./helm/trident-port" not found` | You tried to install from a local folder, but there is no chart on this disk to install from | Install straight from the registry instead: `helm install trident-port oci://ghcr.io/calzdevops/charts/trident-port --version 0.2.46 ...` |
-| `webhook.yaml ... wrong type for value; expected map[string]interface {}` | The chart version is older than 0.2.44, which fixed this template | Install chart `0.2.44` or newer: `--version 0.2.46` |
+| `Error: path "./helm/trident-port" not found` | You tried to install from a local folder, but there is no chart on this disk to install from | Install straight from the registry instead: `helm install trident-port oci://ghcr.io/calzdevops/charts/trident-port --version 0.2.47 ...` |
+| `webhook.yaml ... wrong type for value; expected map[string]interface {}` | The chart version is older than 0.2.44, which fixed this template | Install chart `0.2.44` or newer: `--version 0.2.47` |
 | Pod stuck `Pending`, `kubectl describe pod` shows `unbound immediate PersistentVolumeClaims` | The cluster has no default StorageClass, and none was set at install | Delete the pending PVC (`kubectl -n trident-port delete pvc trident-port-tracking`), then re-run the install with `--set persistence.storageClass=<name>` (Helm) or the CR edit shown under Option A above, then `helm upgrade` / re-apply |
 | `Pod "trident-port-webhook-..." does not have a named port 'http'` when running `kubectl port-forward` | The chart version is older than 0.2.45, which fixed the webhook Service | Install chart `0.2.45` or newer, or port-forward the Deployment instead of the Service: `kubectl port-forward deploy/trident-port -n trident-port 8000:8000` |
 | `ImagePullBackOff` | Either the `ghcr` pull secret is missing in this namespace, or the token inside it is wrong/expired | Re-check `kubectl -n <namespace> get secret ghcr`, and that `<PAT>` in the secret matches the token NetApp gave you |
