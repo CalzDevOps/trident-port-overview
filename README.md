@@ -143,112 +143,278 @@ Trident Port is validated against the following platforms:
 
 ---
 
-## Deployment Models
+## Installation
 
-```mermaid
-flowchart TD
-    O["Option A — operator<br/><i>recommended</i>"] --> O1[namespace + pull secret]
-    O1 --> O2[operator/install.yaml<br/>CRD + RBAC + Deployment]
-    O2 --> O3[operator/config/sample.yaml<br/><i>its spec IS the chart's values</i>]
-    H["Option B — Helm"] --> H1["helm install oci://ghcr.io/calzdevops/charts/trident-port"]
-    C["Option C — container"] --> C1[podman/docker run,<br/>kubeconfig mounted in]
-    O3 --> R[port-forward :8000<br/>+ activate licence]
-    H1 --> R
-    C1 --> R
-```
+There are three ways to install Trident Port: **Option A**, an operator that
+manages the deployment for you (recommended); **Option B**, Helm directly; or
+**Option C**, a standalone container outside Kubernetes. All three end at the
+same place — a running pod you reach with `kubectl port-forward`, where you
+activate your licence.
 
-The chart's `appVersion`, defined in
-[`helm/trident-port/Chart.yaml`](helm/trident-port/Chart.yaml), is what a deployment
-runs. `tp --version` reports the version of an installed binary.
+Everything you need for all three options is on this page. Nothing else to
+read first.
 
-### Option A — Operator (Recommended)
+### Before you start
 
-[`operator/README.md`](operator/README.md) is the maintained deployment runbook,
-including recovery from an interrupted adoption. **Deployment order is enforced: the
-operator is always installed first** — the chart compares a content digest of the
-RBAC it requires against the operator's live `ClusterRole`, and refuses a partial
-upgrade on mismatch rather than proceeding halfway.
+- `kubectl`, configured for the target cluster — `kubectl cluster-info` should
+  succeed before you go any further.
+- Helm 3.10 or newer for Options A and B — check with `helm version`.
+- At least one Trident `TridentBackendConfig` already `Bound` — check with
+  `kubectl get tbc -A`.
+- A GitHub personal access token (PAT) with **only** the `read:packages`
+  scope. NetApp / CalzDevOps issues this to you as part of onboarding — do not
+  create your own. Below, `<github-user>` is your GitHub username and `<PAT>`
+  is this token.
+- **Option A only:** two files NetApp hands you at onboarding time,
+  `install.yaml` and `config/sample.yaml`. They are account-specific and are
+  not published in this repository. Save them locally before you start, e.g.
+  in `~/trident-port-onboarding/`, and run the commands below from that
+  folder.
 
-`operator/install.yaml` and `operator/config/sample.yaml` are not published in this
-overview repository — NetApp / CalzDevOps hands them over together with registry
-access as part of onboarding, so they always match the registry credentials being
-issued alongside them.
+### Option A — Operator (recommended)
+
+Use this if you want upgrades, RBAC and adoption handled for you.
+
+**Step 1 — create the operator's namespace and its pull secret.**
 
 ```bash
-# 1. Operator namespace and registry credentials.
 kubectl create namespace trident-port-system --save-config
 kubectl -n trident-port-system create secret docker-registry ghcr \
-  --docker-server=ghcr.io --docker-username=<user> --docker-password=<PAT>
+  --docker-server=ghcr.io \
+  --docker-username=<github-user> \
+  --docker-password=<PAT>
+```
 
-# 2. Install the operator (CRD + RBAC + Deployment).
-kubectl apply -f operator/install.yaml
+You should see `namespace/trident-port-system created` and `secret/ghcr
+created`. If instead you see `AlreadyExists`, that is fine — continue. Any
+other error, stop and check `kubectl config current-context` points at the
+right cluster.
+
+**Step 2 — install the operator.**
+
+```bash
+kubectl apply -f install.yaml
 kubectl -n trident-port-system rollout status deploy/trident-port-operator --timeout=300s
+```
 
-# 3. Product namespace and its own registry credentials — separate from the
-#    operator's. The CR's spec is the chart's values file.
+You should see a list of created objects, ending with `deployment
+"trident-port-operator" successfully rolled out`. If it never returns, run
+`kubectl -n trident-port-system get pods` — `ImagePullBackOff` means the
+secret from Step 1 is missing or wrong.
+
+**Step 3 — create the product's own namespace and pull secret (a separate
+one, in a separate namespace), then hand it the sample configuration.**
+
+```bash
 kubectl create namespace trident-port
 kubectl -n trident-port create secret docker-registry ghcr \
-  --docker-server=ghcr.io --docker-username=<user> --docker-password=<PAT>
-kubectl apply -f operator/config/sample.yaml
+  --docker-server=ghcr.io \
+  --docker-username=<github-user> \
+  --docker-password=<PAT>
+kubectl apply -f sample.yaml
 kubectl -n trident-port rollout status deploy/trident-port --timeout=300s
 ```
 
-The operator publishes the port-forward command and licence activation path in the
-`Deployed` condition:
+You should see `deployment "trident-port" successfully rolled out`. If not,
+`kubectl -n trident-port describe pod <pod-name>` — the most common cause is
+the same missing pull secret, in this namespace this time.
+
+**Step 4 — get your exact port-forward command and licence-activation
+instructions.** The operator writes them into the `TridentPort` object once
+the deployment is up:
 
 ```bash
 kubectl -n trident-port get tridentport trident-port \
   -o jsonpath='{.status.conditions[?(@.type=="Deployed")].message}'
 ```
 
+Follow what this prints — it is generated for your install. Then skip to
+["Opening the UI"](#opening-the-ui-and-activating-your-licence) below.
+
 ### Option B — Helm
 
-The chart is published as a private OCI package,
-`oci://ghcr.io/calzdevops/charts/trident-port`. Reaching it needs a GitHub personal
-access token with `read:packages` — issued by NetApp / CalzDevOps as part of
-onboarding, together with the two operator manifests above — a `docker-registry`
-secret built from it so the cluster can pull the image, and `helm registry login`
-so Helm itself can pull the chart:
+Use this if you manage Helm releases directly, without the operator.
+
+**Step 1 — log the cluster and Helm itself into the registry.** These are two
+separate logins — the cluster needs one to pull the image, Helm needs the
+other to pull the chart:
 
 ```bash
 kubectl create namespace trident-port
+
 kubectl -n trident-port create secret docker-registry ghcr \
-  --docker-server=ghcr.io --docker-username=<user> --docker-password=<PAT>
-helm registry login ghcr.io -u <user> -p <PAT>
+  --docker-server=ghcr.io \
+  --docker-username=<github-user> \
+  --docker-password=<PAT>
 
-# The chart's own defaults, to start editing from:
+echo "<PAT>" | helm registry login ghcr.io -u <github-user> --password-stdin
+```
+
+The last command should print `Login Succeeded`. A `401` or `403` means the
+PAT lacks `read:packages`, or has expired — ask whoever issued it for a fresh
+one.
+
+**Step 2 — get the chart's default values file, and edit the few fields that
+matter.**
+
+```bash
 helm show values oci://ghcr.io/calzdevops/charts/trident-port \
-  --version 0.2.43 > my-values.yaml
+  --version 0.2.44 > my-values.yaml
+```
 
+You should now have a file `my-values.yaml`, a few hundred lines, starting
+with `image:`. Open it and set:
+
+- `image.pullSecrets`, to `[ghcr]` — the secret you created in Step 1.
+- `config.DEST_SC` — the destination StorageClass migrations write into. Leave
+  it blank and set it later from the web UI (Settings → Environment) if you
+  don't know it yet.
+- `existingSecret` — only if you already have a Kubernetes Secret holding your
+  ONTAP password; otherwise leave it blank and enter ONTAP details from the UI
+  after install.
+
+Every other field already has a working default, each explained by a comment
+directly above it in the file — leave the rest alone for a first install.
+
+**Step 3 — install.**
+
+```bash
 helm install trident-port oci://ghcr.io/calzdevops/charts/trident-port \
-  --version 0.2.43 \
+  --version 0.2.44 \
   --namespace trident-port --create-namespace \
-  --set image.pullSecrets[0]=ghcr \
   --values my-values.yaml
 ```
 
-`image.tag` is intentionally left empty — the chart installs its own `appVersion`,
-keeping version and chart in lockstep. `--version` pins the CHART and moves
-independently of `appVersion`. Values, RBAC and exposure:
-[`docs/INSTALL.md`](docs/INSTALL.md).
+You should see `STATUS: deployed`, followed by a `NOTES` block with a
+port-forward command and how to fetch the API token — read it, it is specific
+to your install. An error naming a pull secret means Step 1's secret name
+does not match `image.pullSecrets` in your values file; an error naming
+`read:packages` or `401` means the `helm registry login` in Step 1 needs to be
+run again.
+
+**Step 4 — confirm the pod is actually running** (`deployed` describes the
+Helm release, not the pod):
+
+```bash
+kubectl rollout status deployment/trident-port -n trident-port --timeout=300s
+```
+
+You should see `deployment "trident-port" successfully rolled out`. If not,
+`kubectl -n trident-port get pods`: `ImagePullBackOff` again points at the
+pull secret; `Pending` means run `kubectl describe pod <name>` for the
+scheduling reason (resources, taints, node selectors).
+
+`image.tag` is intentionally left empty in the values file — the chart
+installs its own `appVersion`, so the chart version and the image version move
+together, one decision instead of two.
 
 ### Option C — Standalone Container
 
-The same image, run with a kubeconfig mounted in, as user `trident-port` (uid 1000) —
-never as root. Steps in [`docs/INSTALL.md`](docs/INSTALL.md).
+Use this if you do not want to install anything into the cluster itself — a
+container on a bastion host or your laptop, using whatever your own
+kubeconfig can already do.
 
-### Reaching the Interface
+**Step 1 — log in to the registry and pull the image.**
 
-The default Service is `ClusterIP` by design: the API operates with the deployment's
-own RBAC, so anything reaching it can stop workloads, repoint claims and delete
-volumes through it. Helm and the standalone container each generate and persist an
-access token — an `X-Trident-Port-Token` header, validated in constant time and
-required on every request except health checks, static assets and the activation
-screen. Expose the port only on a trusted network.
+```bash
+echo "<PAT>" | docker login ghcr.io -u <github-user> --password-stdin
+docker pull ghcr.io/calzdevops/trident-port:v1.2.0-rc55
+```
+
+You should see `Login Succeeded`, then the image layers downloading, ending
+with `Status: Downloaded newer image`.
+
+**Step 2 — run it, with your kubeconfig and a folder for session state
+mounted in.**
+
+```bash
+mkdir -p ./tracking
+
+docker run -d \
+  --name trident-port \
+  -p 8000:8000 \
+  -v ~/.kube:/root/.kube:ro \
+  -v "$(pwd)/tracking:/app/tracking" \
+  ghcr.io/calzdevops/trident-port:v1.2.0-rc55
+```
+
+Mount the kubeconfig at `/root/.kube`, not the container's own home directory
+— the container copies it internally with the right ownership on startup;
+mounting it directly anywhere else leaves it unreadable by the process that
+needs it.
+
+You should see a container ID printed, and `docker ps` showing it `Up`. If
+`docker logs trident-port` shows a permissions error on `/app/tracking`, the
+host folder needs to be writable by the container (`chmod 777 ./tracking` on
+a lab machine, or add `--user $(id -u)` to the command above).
+
+**Step 3 — confirm it is actually serving, not just running.**
+
+```bash
+docker exec trident-port curl -sf http://localhost:8000/api/health
+```
+
+You should see a JSON body with no error field. If this fails immediately
+after Step 2, wait a few seconds and retry (first boot); if it never
+succeeds, read `docker logs trident-port` for the actual error.
+
+### Opening the UI and activating your licence
+
+**Options A and B** — forward the port:
 
 ```bash
 kubectl -n trident-port port-forward svc/trident-port 8000:8000
-# http://localhost:8000 — the REST interface is self-documenting at /docs
+```
+
+**Option C** — the container already publishes port 8000 on the host; skip
+straight to opening the browser.
+
+Open `http://localhost:8000`. The first screen is licence activation — paste
+the token NetApp gave you and confirm. Every other page needs this
+deployment's own API token, which the browser will ask for the first time it
+gets a `401`; fetch it with:
+
+```bash
+kubectl -n trident-port get secret trident-port-api-token \
+  -o jsonpath='{.data.token}' | base64 -d
+```
+
+**This install is reachable only from inside the cluster's network by
+default** (`ClusterIP`). The token above guards the API from a stranger who
+can reach the address — it is a shared secret, not a per-user login — so keep
+the default exposure unless there is an authenticating proxy in front.
+
+### Verifying the install
+
+```bash
+kubectl -n trident-port get pods
+```
+
+You should see two pods, both `1/1 Running`: `trident-port-xxxx` (the
+application) and `trident-port-webhook-xxx` (a small admission helper the
+chart installs automatically — its presence is expected, not a sign of a
+double install).
+
+### Uninstalling
+
+```bash
+# Option A — remove the CR, then the operator itself
+kubectl -n trident-port delete tridentport trident-port
+kubectl delete -f install.yaml
+
+# Option B — Helm
+helm uninstall trident-port -n trident-port
+
+# Option C — container
+docker rm -f trident-port
+```
+
+Session history and rollback scripts live on a persistent volume
+(`trident-port-tracking`) that survives uninstall on purpose, so a reinstall
+does not lose them. Delete it explicitly if you want it gone:
+
+```bash
+kubectl -n trident-port delete pvc trident-port-tracking
 ```
 
 ### Licensing
