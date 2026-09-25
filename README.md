@@ -150,7 +150,7 @@ flowchart TD
     O["Option A — operator<br/><i>recommended</i>"] --> O1[namespace + pull secret]
     O1 --> O2[operator/install.yaml<br/>CRD + RBAC + Deployment]
     O2 --> O3[operator/config/sample.yaml<br/><i>its spec IS the chart's values</i>]
-    H["Option B — Helm"] --> H1[helm install ./helm/trident-port]
+    H["Option B — Helm"] --> H1["helm install oci://ghcr.io/calzdevops/charts/trident-port"]
     C["Option C — container"] --> C1[podman/docker run,<br/>kubeconfig mounted in]
     O3 --> R[port-forward :8000<br/>+ activate licence]
     H1 --> R
@@ -168,6 +168,11 @@ including recovery from an interrupted adoption. **Deployment order is enforced:
 operator is always installed first** — the chart compares a content digest of the
 RBAC it requires against the operator's live `ClusterRole`, and refuses a partial
 upgrade on mismatch rather than proceeding halfway.
+
+`operator/install.yaml` and `operator/config/sample.yaml` are not published in this
+overview repository — NetApp / CalzDevOps hands them over together with registry
+access as part of onboarding, so they always match the registry credentials being
+issued alongside them.
 
 ```bash
 # 1. Operator namespace and registry credentials.
@@ -198,15 +203,33 @@ kubectl -n trident-port get tridentport trident-port \
 
 ### Option B — Helm
 
+The chart is published as a private OCI package,
+`oci://ghcr.io/calzdevops/charts/trident-port`. Reaching it needs a GitHub personal
+access token with `read:packages` — issued by NetApp / CalzDevOps as part of
+onboarding, together with the two operator manifests above — a `docker-registry`
+secret built from it so the cluster can pull the image, and `helm registry login`
+so Helm itself can pull the chart:
+
 ```bash
-helm install trident-port ./helm/trident-port \
+kubectl create namespace trident-port
+kubectl -n trident-port create secret docker-registry ghcr \
+  --docker-server=ghcr.io --docker-username=<user> --docker-password=<PAT>
+helm registry login ghcr.io -u <user> -p <PAT>
+
+# The chart's own defaults, to start editing from:
+helm show values oci://ghcr.io/calzdevops/charts/trident-port \
+  --version 0.2.43 > my-values.yaml
+
+helm install trident-port oci://ghcr.io/calzdevops/charts/trident-port \
+  --version 0.2.43 \
   --namespace trident-port --create-namespace \
   --set image.pullSecrets[0]=ghcr \
   --values my-values.yaml
 ```
 
 `image.tag` is intentionally left empty — the chart installs its own `appVersion`,
-keeping version and chart in lockstep. Values, RBAC and exposure:
+keeping version and chart in lockstep. `--version` pins the CHART and moves
+independently of `appVersion`. Values, RBAC and exposure:
 [`docs/INSTALL.md`](docs/INSTALL.md).
 
 ### Option C — Standalone Container
