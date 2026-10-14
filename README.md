@@ -555,8 +555,7 @@ supported operator's own CRD group — never a wildcard over custom resources.
 (`runAsUser: 0`) with `allowPrivilegeEscalation: false` and no additional
 capabilities — sufficient to preserve filesystem ownership and write a raw block
 device. Requesting `privileged` access is unnecessary and is rejected under
-OpenShift's `restricted-v2` policy by design; the remediation the product surfaces is
-`oc adm policy add-scc-to-user anyuid`. Exactly one code path requires an additional
+OpenShift's `restricted-v2` policy by design. Exactly one code path requires an additional
 capability: mounting a foreign NFS export, which requires `CAP_SYS_ADMIN`.
 
 **On OpenShift the product binds its own security context constraint** (installed
