@@ -800,8 +800,7 @@ rest follow the chosen mode in the same run. Each command has `plan` and `status
 ### Validated Compatibility, by Operator Kind
 
 Every migration path is measured end to end against a real cluster before it is
-published as supported. `✅` denotes a validated, production-ready path; `WIP`
-denotes active engineering work; `Native route · measured` marks a kind moved by
+published as supported. `✅` denotes a validated, production-ready path; `Native route · measured` marks a kind moved by
 its own route (see [Native Routes](#elasticsearch-eck-and-kafka-strimzi-native-routes)),
 measured on a real cluster; `excluded` marks a deliberate scope decision.
 
@@ -810,50 +809,30 @@ dedicated CRD path) alongside its validation status.
 
 | Kind | Mechanism · Status | Kind | Mechanism · Status |
 |---|---|---|---|
-| `Airflow` | generic · WIP | `Alertmanager` | 3 · WIP |
-| `ArangoDB` | generic · WIP | `Artifactory` | generic · ✅ |
-| `CassandraDatacenter` | 2 · ✅ | `CephCluster` (Rook) | excluded |
-| `ClickHouseInstallation` | 1 · WIP | `Cluster` (CloudNativePG) | 1 · WIP |
-| `CouchDB` | generic · ✅ | `CouchbaseCluster` | 2 · WIP |
+| `Artifactory` | generic · ✅ | `CassandraDatacenter` | 2 · ✅ |
+| `CephCluster` (Rook) | excluded | `CouchDB` | generic · ✅ |
 | `CrdbCluster` (CockroachDB) | 2 · ✅ | `Dragonfly` | 3 · ✅ |
-| `Elasticsearch` | Native route · measured | `EtcdCluster` | 3 · WIP |
-| `Gitea` | generic · ✅ | `Harbor` | generic · ✅ |
-| `Hazelcast` | 3 · WIP | `InfluxDB` | generic · WIP |
-| `InnoDBCluster` (Oracle) | 2 · WIP | `Jenkins` | generic · WIP |
-| `KafkaNodePool` | Native route · measured | `Keycloak` | 3 · WIP |
-| `MariaDB` | 3 · ✅ | `Memcached` | — · WIP (chart has no volume) |
-| `Milvus` | 3 · ✅ | `MongoDBCommunity` | 3 · WIP |
+| `Elasticsearch` | Native route · measured | `Gitea` | generic · ✅ |
+| `Harbor` | generic · ✅ | `KafkaNodePool` | Native route · measured |
+| `MariaDB` | 3 · ✅ | `Milvus` | 3 · ✅ |
 | `MySQLCluster` (MOCO) | 1 · ✅ | `MysqlCluster` (Presslabs) | 3 · ✅ |
 | `NATS` | generic · ✅ | `Neo4j` | generic · ✅ |
-| `OpenSearchCluster` | 3 · WIP | `PerconaServerMongoDB` | 3 · ✅ |
-| `PerconaXtraDBCluster` | 3 · ✅ | `Prometheus` | 3 · WIP |
-| `Pulsar` | generic · WIP | `RabbitmqCluster` | 3 · ✅ |
-| `RedisCluster` | 3 · WIP | `RedisEnterpriseCluster` | 3 · WIP |
-| `ScyllaCluster` | 3 · WIP | `Seaweed` | 2 · ✅ |
-| `SolrCloud` | 3/2 · WIP | `TemporalCluster` | 2 · ✅ |
-| `Tenant` (MinIO) | 3 · WIP | `TidbCluster` | 3 · WIP |
-| `Valkey` | 3 · WIP | `Vault` | excluded |
+| `PerconaServerMongoDB` | 3 · ✅ | `PerconaXtraDBCluster` | 3 · ✅ |
+| `RabbitmqCluster` | 3 · ✅ | `Seaweed` | 2 · ✅ |
+| `TemporalCluster` | 2 · ✅ | `Vault` | excluded |
 | `VirtualMachine` (KubeVirt) | 4 · ✅ | `VMCluster` | 1 · ✅ |
-| `ZookeeperCluster` | 2 · WIP | `postgresql` (Zalando) | 3 · ✅ |
+| `postgresql` (Zalando) | 3 · ✅ |  |  |
 
 **21 validated, production-ready paths**, each measured clean end to end against a
-real cluster. `KafkaNodePool` and `SolrCloud` list two mechanisms because neither
-alone stops them fully — both have been evaluated, and both remain active work.
-Kinds requiring a third-party licensed operator to validate (MongoDB Enterprise,
-CrunchyData PostgreSQL Operator, Sonatype Nexus Repository via Red Hat Connect) are
-tracked separately and engaged on a per-opportunity basis. One kind (RedisFailover,
-via the Spotahome operator) is omitted here as its upstream project is no longer
-maintained.
+real cluster.
 
 `VirtualMachine`'s disk migrates through its own dedicated DataVolume swap
 (`tp compat kv-dv-swap.sh swap <ns> <vm> <datavolume> <target-pv> <target-sc>`),
 mechanism 4's shape rather than a CR patch — validated end to end, including data
 integrity inside the guest. `MySQLCluster` (MOCO) is the validated case of mechanism 1
 working exactly as designed: a dedicated `spec.offline` field, not a replica count.
-`Gitea`, `CouchDB`, `Neo4j`, `ArangoDB`, `InfluxDB`, `Harbor`, `Pulsar`, `Artifactory`,
-`Jenkins` and `Airflow` are validated through the generic unknown-operator path
-(direct, stated scaling); `CouchDB`, `NATS`, `Gitea` and `Neo4j` are confirmed there
-today. `CephCluster` (Rook) is excluded by design: storage infrastructure, like
+`Gitea`, `CouchDB`, `Neo4j`, `NATS`, `Harbor` and `Artifactory` are validated through
+the generic unknown-operator path (direct, stated scaling). `CephCluster` (Rook) is excluded by design: storage infrastructure, like
 Trident itself, is not a migration target for this product. `Vault` is excluded by
 design as well: migrating its Raft store underneath it is a correctness risk outside
 the product's scope — validated against real hardware, the storage transfer itself
@@ -862,8 +841,7 @@ regardless, so a clean storage copy alone does not constitute a working handoff.
 `Milvus` (mechanism 3 entry) follows the same pattern as `TemporalCluster`: its own CR
 patch is not exercised in practice because state resides in dependent services (etcd,
 MinIO) rather than the patched component — the namespace migration itself, through
-those dependencies' volumes, completes cleanly end to end. `Memcached`'s current chart
-ships with no persistent volume — nothing to migrate, pending a chart revision.
+those dependencies' volumes, completes cleanly end to end.
 
 ---
 
@@ -974,9 +952,6 @@ an intentional design decision from data loss.
 | A namespace under active Argo CD/Flux reconciliation | An Argo CD Application with automated sync is suspended by the run. Flux, an Application without automated sync, or one that cannot be read is declined, naming the owning resource and the exact suspend command | Suspend it as printed, or use `--allow-gitops` to proceed without suspending (the controller can recreate a claim on the source class during the swap) |
 | `--dry-run` performs no changes | Enforced at the engine level | Any state change during a rehearsal is treated as a defect |
 | A long-running copy shows no progress percentage | A status line is emitted on a fixed interval, with elapsed time and the exact command to follow the live log | rsync-based transfers cannot produce a reliable ETA; progress is reported by interval instead |
-| OpenShift rejects the copy pod | The product's SCC could not be bound in that namespace (not installed by the chart, or no right to create a RoleBinding there) | Run the command the product prints. Never request `privileged` |
-| A generic Kubernetes namespace under `PodSecurity: restricted` rejects the copy pod | Same failure class as the OpenShift case, on a different platform | The product prints the exact remediation: `kubectl label ns <ns> pod-security.kubernetes.io/enforce=baseline --overwrite` |
-| `Forbidden` on a newly onboarded operator's CRD | That operator is not yet declared in the product's `ClusterRole` | RBAC is granted per operator, by explicit rule — never a wildcard. A new operator kind requires that rule before this product can manage it |
 
 **A successful migration** is confirmed when `tp validate` agrees with the
 byte-level checksum comparison, the migration report shows all cutover phases
@@ -990,8 +965,7 @@ with measured durations, and a complete session record exists under
 - **`tp support-bundle`** produces a complete diagnostic archive (logs, trace,
   session state) for submission to support.
 - Before contacting support, capture the active session (`tp sessions --session
-  <id> --follow`) and the exact error text — the majority of conditions in the
-  table above are self-resolving with that information alone.
+  <id> --follow`) and the exact error text.
 - Contact your NetApp account team or supporting partner for engagement-specific
   support channels.
 
