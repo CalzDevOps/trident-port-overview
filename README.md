@@ -1,4 +1,4 @@
-# Trident Port™
+# Trident Port
 
 > **Sailing to a Safe Harbor** — move Kubernetes persistent volumes from any storage
 > provisioner onto NetApp Trident CSI.
