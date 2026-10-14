@@ -138,7 +138,7 @@ Trident Port is validated against the following platforms:
 | NetApp Trident | 24+ · **26.06+** for qtree import in SnapMirror mode |
 | Trident backend | at least one `TridentBackendConfig` bound, provisioning into the destination StorageClass |
 | Credentials | a Kubernetes Secret holding the ONTAP credentials |
-| Registry | private image — a `docker-registry` pull secret per namespace |
+| Registry | private image — a `docker-registry` pull secret (per target namespace if the image is pulled from a private registry; none with a mirror the nodes can pull from) |
 | Licence | a token bound to the cluster's `kube-system` namespace UID |
 
 ---
@@ -175,12 +175,11 @@ read first. This guide assumes no prior Kubernetes, Trident or Trident Port
 knowledge — if a step tells you to look at the output, that is because the
 next step depends on what it says.
 
-In plain terms: Kubernetes runs programs in *pods*, grouped in *namespaces*.
-Trident Port is one pod. An *operator* is a small helper pod that installs and
-upgrades other programs for you; with Option A you install the helper once, then
-describe the install in one short file and the helper does the rest. The operator
-install has been run from scratch on RKE2 and is validated on k3s. Whichever
-option you choose, you only type the commands shown, in order.
+> **Note for readers new to Kubernetes.** Kubernetes runs programs in *pods*,
+> grouped in *namespaces*; Trident Port is one pod. An *operator* is a helper pod
+> that installs and upgrades another program from a short description file. The
+> operator install has been run from scratch on RKE2 and is validated on k3s.
+> Each option below is a list of commands to type in order.
 
 ### 0. What you need before you start
 
@@ -560,10 +559,13 @@ OpenShift's `restricted-v2` policy by design; the remediation the product surfac
 `oc adm policy add-scc-to-user anyuid`. Exactly one code path requires an additional
 capability: mounting a foreign NFS export, which requires `CAP_SYS_ADMIN`.
 
-**On OpenShift the product binds its own security context constraint** to the copy
-service account before the copy pods start, and returns it when the run ends — or
-refuses to return it while copy pods are still running. Measured on OpenShift for
-`tp live-sync` (bulk), `tp strimzi-stopped`, `tp migrate` and `tp auto`.
+**On OpenShift the product binds its own security context constraint** (installed
+by the Helm chart) to the copy service account, in each namespace, before the copy
+pods start, and returns it when the run ends — or keeps it while copy pods are still
+running. Measured on OpenShift for `tp live-sync` (bulk), `tp strimzi-stopped`,
+`tp migrate` and `tp auto`. Nothing has to be granted by hand. Only if the chart's
+SCC is not installed, or the product may not create a RoleBinding in that namespace,
+does the product print the manual command to run (plan B).
 
 **Trident's own controller may be restarted as part of a SnapMirror import** — shared
 CSI infrastructure, restarted by Trident itself, not by this product directly, when
@@ -630,6 +632,10 @@ a validated licence.
 | `tp mixed-cutover` | `start`/`cutover` — the same repoint as `live-sync` and `block-cutover`, coordinated for both mixed in one namespace |
 
 ### A Namespace, End to End
+
+The `tp` commands below run inside the Trident Port pod. From your machine:
+`kubectl -n trident-port exec -it deploy/trident-port -c trident-port -- tp <command>`
+(`oc` instead of `kubectl` on OpenShift).
 
 ```bash
 # Rehearsal: discovery and pre-flight only. Nothing is created, stopped or copied.
@@ -796,7 +802,9 @@ rest follow the chosen mode in the same run. Each command has `plan` and `status
 
 Every migration path is measured end to end against a real cluster before it is
 published as supported. `✅` denotes a validated, production-ready path; `WIP`
-denotes active engineering work; `excluded` marks a deliberate scope decision.
+denotes active engineering work; `Native route · measured` marks a kind moved by
+its own route (see [Native Routes](#elasticsearch-eck-and-kafka-strimzi-native-routes)),
+measured on a real cluster; `excluded` marks a deliberate scope decision.
 
 Each entry lists the mechanism applied (1–4 above, or `generic` for kinds without a
 dedicated CRD path) alongside its validation status.
@@ -809,11 +817,11 @@ dedicated CRD path) alongside its validation status.
 | `ClickHouseInstallation` | 1 · WIP | `Cluster` (CloudNativePG) | 1 · WIP |
 | `CouchDB` | generic · ✅ | `CouchbaseCluster` | 2 · WIP |
 | `CrdbCluster` (CockroachDB) | 2 · ✅ | `Dragonfly` | 3 · ✅ |
-| `Elasticsearch` | 3 · WIP | `EtcdCluster` | 3 · WIP |
+| `Elasticsearch` | Native route · measured | `EtcdCluster` | 3 · WIP |
 | `Gitea` | generic · ✅ | `Harbor` | generic · ✅ |
 | `Hazelcast` | 3 · WIP | `InfluxDB` | generic · WIP |
 | `InnoDBCluster` (Oracle) | 2 · WIP | `Jenkins` | generic · WIP |
-| `KafkaNodePool` | 2/3 · WIP | `Keycloak` | 3 · WIP |
+| `KafkaNodePool` | Native route · measured | `Keycloak` | 3 · WIP |
 | `MariaDB` | 3 · ✅ | `Memcached` | — · WIP (chart has no volume) |
 | `Milvus` | 3 · ✅ | `MongoDBCommunity` | 3 · WIP |
 | `MySQLCluster` (MOCO) | 1 · ✅ | `MysqlCluster` (Presslabs) | 3 · ✅ |
@@ -865,10 +873,14 @@ ships with no persistent volume — nothing to migrate, pending a chart revision
 - **Infrastructure namespaces** are protected by default; `--i-know-this-is-infrastructure`
   is required to proceed — stopping workloads in a namespace running storage
   infrastructure removes volumes rather than quiescing them.
-- **A namespace under active GitOps reconciliation (Argo CD or Flux)** is detected and
-  the operation is declined, naming the owning resource and the exact suspend
-  command. `--allow-gitops` is the documented override, with both associated risks
-  stated explicitly.
+- **A namespace under active GitOps reconciliation (Argo CD or Flux)** is detected.
+  An Argo CD Application with automated sync is suspended by the run itself (its
+  sync policy is saved in the session) and handed back with `tp gitops resume`; see
+  [Argo CD and GitOps](#argo-cd-and-gitops). When it cannot be suspended — Flux, an
+  Application without automated sync, or one that cannot be read — the operation is
+  declined, naming the owning resource and the exact suspend command.
+  `--allow-gitops` proceeds without suspending anything: the controller can then
+  recreate a claim on the source class while it is being swapped.
 - **A second run against a namespace already in flight is refused, not queued.**
   `tp auto`, `tp batch`, `tp snapmirror` and `tp live-sync` all route through a single
   session guard:
@@ -887,14 +899,23 @@ ships with no persistent volume — nothing to migrate, pending a chart revision
 
 ## Argo CD and GitOps
 
-When a namespace is managed by Argo CD, the migration suspends the Application,
-moves the claims and prints a session id. Git still names the old StorageClass until
+When a namespace is managed by Argo CD, `tp auto`, `tp combo-cutover` and `tp live-sync`
+suspend its Application (when it has automated sync), move the claims and print a
+session id. Git still names the old StorageClass until
 it is changed.
 
 1. Run the migration. The Application is suspended by the run itself.
 2. `tp gitops status --session <id>` lists what is left to change in Git.
 3. `tp gitops apply --session <id> > change.patch`, then `git am change.patch` in your
    clone; push and merge it as usual.
+   - **What it produces:** it clones the Application's repository (without a
+     credential, so a private repository is not readable this way), changes only the
+     line that holds the old StorageClass, and writes a patch from that clone with
+     real paths. It edits a Helm `values.yaml` key, a Kustomize file or a plain YAML
+     manifest, and only when exactly one place matches.
+   - **When it cannot:** an Application with several sources or a config-management
+     plugin, a layout it does not recognise, or several values that match. That
+     change is listed as `unknown` and nothing is edited; make it by hand.
 4. `tp gitops sync --session <id>` prints the Argo CD sync command; add `--yes` to run it.
 5. `tp gitops resume --session <id> --yes` gives the Application back its automated
    sync policy.
@@ -951,10 +972,10 @@ an intentional design decision from data loss.
 |---|---|---|
 | A second run against a namespace already migrating | Refused: a migration of that namespace is already in progress | By design — concurrent runs on one namespace would overwrite each other's copy in progress. Wait for completion, or follow the active session |
 | `tp auto` against an infrastructure namespace | Declined by default, requiring `--i-know-this-is-infrastructure` | Stopping workloads where storage itself runs can remove volumes rather than quiesce them. Requires explicit acknowledgment |
-| A namespace under active Argo CD/Flux reconciliation | Declined, naming the owning resource and the exact suspend command | `--allow-gitops` is the documented override, with both associated risks stated |
+| A namespace under active Argo CD/Flux reconciliation | An Argo CD Application with automated sync is suspended by the run. Flux, an Application without automated sync, or one that cannot be read is declined, naming the owning resource and the exact suspend command | Suspend it as printed, or use `--allow-gitops` to proceed without suspending (the controller can recreate a claim on the source class during the swap) |
 | `--dry-run` performs no changes | Enforced at the engine level | Any state change during a rehearsal is treated as a defect |
 | A long-running copy shows no progress percentage | A status line is emitted on a fixed interval, with elapsed time and the exact command to follow the live log | rsync-based transfers cannot produce a reliable ETA; progress is reported by interval instead |
-| OpenShift rejects the copy pod | Pod unschedulable under `restricted-v2` | Do not request `privileged` — the remediation the product prints is `oc adm policy add-scc-to-user anyuid` |
+| OpenShift rejects the copy pod | The product's SCC could not be bound in that namespace (not installed by the chart, or no right to create a RoleBinding there) | Run the command the product prints. Never request `privileged` |
 | A generic Kubernetes namespace under `PodSecurity: restricted` rejects the copy pod | Same failure class as the OpenShift case, on a different platform | The product prints the exact remediation: `kubectl label ns <ns> pod-security.kubernetes.io/enforce=baseline --overwrite` |
 | `Forbidden` on a newly onboarded operator's CRD | That operator is not yet declared in the product's `ClusterRole` | RBAC is granted per operator, by explicit rule — never a wildcard. A new operator kind requires that rule before this product can manage it |
 
@@ -982,11 +1003,11 @@ with measured durations, and a complete session record exists under
 Beyond the environment requirements above, the following should be confirmed
 ahead of a migration window rather than discovered during one:
 
-- **RBAC, and on OpenShift the appropriate SCC exception, applied in advance** —
-  on OpenShift, `oc adm policy add-scc-to-user anyuid` (never request
-  `privileged`: rejected under `restricted-v2` by design); on a generic cluster
-  enforcing `PodSecurity: restricted`, the `baseline` label the product itself
-  documents.
+- **RBAC** — installed by the chart. On OpenShift nothing else is needed: the product
+  binds its own SCC (never `privileged`, which `restricted-v2` rejects by design).
+  Plan B, only if the product prints that it could not bind it: run the command it
+  prints. On a generic cluster enforcing `PodSecurity: restricted`, the `baseline`
+  label the product itself documents.
 - **A `VolumeSnapshotClass` registered with a driver matching the source
   provisioner**, when the snapshot method is intended — the planning engine will
   otherwise exclude it, but resolving this ahead of time avoids a mid-window
@@ -994,7 +1015,10 @@ ahead of a migration window rather than discovered during one:
 - **The destination `TridentBackendConfig` already in `Bound` state** before a
   run begins.
 - **ONTAP credentials provisioned as a reachable Kubernetes Secret.**
-- **A registry pull secret present in every target namespace.**
+- **A registry pull secret, only when the image comes from a private registry.** The
+  copy pods run the Trident Port image in the namespace being migrated, and today they
+  take its pull secret from that namespace's `default` ServiceAccount. With a public
+  image or a mirror the nodes pull without a secret, none is needed.
 
 ---
 
