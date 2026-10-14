@@ -629,11 +629,13 @@ a validated licence.
 | `tp stop` | stops the workloads holding the claims |
 | `tp block-cutover` | mirrors a Block PVC's device to its destination and switches; `start`/`cutover` also repoint the application's own claim onto it |
 | `tp mixed-cutover` | `start`/`cutover` — the same repoint as `live-sync` and `block-cutover`, coordinated for both mixed in one namespace |
+| `tp combo-cutover` | one shared cutover window for two or more of snapshot, block mirror and live sync in the same namespace |
 
 ### A Namespace, End to End
 
 The `tp` commands below run inside the Trident Port pod. From your machine:
 `kubectl -n trident-port exec -it deploy/trident-port -c trident-port -- tp <command>`
+(or `docker exec -it trident-port tp <command>` for Option C)
 (`oc` instead of `kubectl` on OpenShift).
 
 ```bash
@@ -823,7 +825,7 @@ dedicated CRD path) alongside its validation status.
 | `VirtualMachine` (KubeVirt) | 4 · ✅ | `VMCluster` | 1 · ✅ |
 | `postgresql` (Zalando) | 3 · ✅ |  |  |
 
-**21 validated, production-ready paths**, each measured clean end to end against a
+**23 validated paths: 21 production-ready, plus 2 native routes**, each measured clean end to end against a
 real cluster.
 
 `VirtualMachine`'s disk migrates through its own dedicated DataVolume swap
@@ -883,12 +885,13 @@ it is changed.
 
 1. Run the migration. The Application is suspended by the run itself.
 2. `tp gitops status --session <id>` lists what is left to change in Git.
-3. `tp gitops apply --session <id> > change.patch`, then `git am change.patch` in your
-   clone; push and merge it as usual.
-   - **What it produces:** it clones the Application's repository (without a
-     credential, so a private repository is not readable this way), changes only the
-     line that holds the old StorageClass, and writes a patch from that clone with
-     real paths. It edits a Helm `values.yaml` key, a Kustomize file or a plain YAML
+3. `tp gitops bundle --session <id> --out <dir>` writes the change and an `apply.py`
+   that you run inside your own clone of the repository, with your own credentials;
+   commit, push and merge it as usual. This is the path for private repositories.
+   For a repository readable without a credential, `tp gitops apply --session <id> >
+   change.patch` produces the same change as a patch for `git am`.
+   - **What it changes:** only the line that holds the old StorageClass, with real
+     paths. It edits a Helm `values.yaml` key, a Kustomize file or a plain YAML
      manifest, and only when exactly one place matches.
    - **When it cannot:** an Application with several sources or a config-management
      plugin, a layout it does not recognise, or several values that match. That
