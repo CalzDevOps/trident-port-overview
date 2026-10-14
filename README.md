@@ -143,6 +143,25 @@ Trident Port is validated against the following platforms:
 
 ---
 
+## Measured on Real Clusters
+
+Everything listed here ran against a real cluster and a real ONTAP, with the result
+checked afterwards. Dates are 2026.
+
+| Area | Where | Result |
+|---|---|---|
+| Install through the operator | RKE2 v1.32, built from scratch with the operator (14 Oct) | Web interface and API answer; a read-only bulk plan (`tp live-sync start --namespaces`) runs and changes nothing. The operator install is also validated on k3s |
+| Live sync, many namespaces | OpenShift (13 Oct) | `2 of 2 namespace(s) syncing with the applications running`; cutover of 3 claims in a 3m54s window, a file modified after the sync identical on both sides |
+| Live sync, window of 10 namespaces | OpenShift (9 Oct) | 10 of 10 migrated in 15m29s wall clock, 2m12s to 3m46s stopped per namespace |
+| vSphere CSI source to ONTAP NAS | k3s (14 Oct) | Live-sync cutover window 2m02s: stop 35s, final delta 37s, swap 11s, restart 5s |
+| Argo CD (real instance) | OpenShift (13 and 14 Oct) | Application suspended during the migration; Git change delivered as a patch; sync policy restored by `tp gitops resume`; StatefulSet recreated with its claim template on the new class |
+| Elasticsearch on ECK | OpenShift (13 Oct) | Moved through new node sets with no outage; Elasticsearch Ready |
+| Kafka on Strimzi | OpenShift (13 Oct) | Broker pool moved through a new pool, 51 partitions in 1m11s, Kafka Ready; controller pool moved with Kafka stopped in 6m53s, or 4m37s with live sync, Kafka Ready |
+| OpenShift security context constraint | OpenShift (13 and 14 Oct) | The product binds its own SCC for the copy pods and returns it when the run ends |
+| Extended attributes | OpenShift (13 and 14 Oct) | With `--copy-xattrs`, a `user.*` attribute set on the source is read on the new volume (`tp live-sync`, `tp migrate`, `tp auto`) |
+
+---
+
 ## Installation
 
 There are three ways to install Trident Port: **Option A**, an operator that
@@ -155,6 +174,13 @@ Everything you need for all three options is on this page. Nothing else to
 read first. This guide assumes no prior Kubernetes, Trident or Trident Port
 knowledge — if a step tells you to look at the output, that is because the
 next step depends on what it says.
+
+In plain terms: Kubernetes runs programs in *pods*, grouped in *namespaces*.
+Trident Port is one pod. An *operator* is a small helper pod that installs and
+upgrades other programs for you; with Option A you install the helper once, then
+describe the install in one short file and the helper does the rest. The operator
+install has been run from scratch on RKE2 and is validated on k3s. Whichever
+option you choose, you only type the commands shown, in order.
 
 ### 0. What you need before you start
 
@@ -534,6 +560,11 @@ OpenShift's `restricted-v2` policy by design; the remediation the product surfac
 `oc adm policy add-scc-to-user anyuid`. Exactly one code path requires an additional
 capability: mounting a foreign NFS export, which requires `CAP_SYS_ADMIN`.
 
+**On OpenShift the product binds its own security context constraint** to the copy
+service account before the copy pods start, and returns it when the run ends — or
+refuses to return it while copy pods are still running. Measured on OpenShift for
+`tp live-sync` (bulk), `tp strimzi-stopped`, `tp migrate` and `tp auto`.
+
 **Trident's own controller may be restarted as part of a SnapMirror import** — shared
 CSI infrastructure, restarted by Trident itself, not by this product directly, when
 an import is refused while a volume name is still held in memory. This occurs **at
@@ -746,6 +777,21 @@ reconciles there for the duration of the window.
 4. **Orphan + PV Retain** — deletes the owner, with the PV already set to `Retain`.
    Available today for KubeVirt.
 
+### Elasticsearch (ECK) and Kafka (Strimzi): Native Routes
+
+ECK refuses a change of storage class on a running claim, and Strimzi keeps applying
+the pool's old class to its claims after a swap. For both, the volume swap is not
+used; each has its own route, online for Elasticsearch and Kafka brokers.
+
+| Workload | Command | Route | Measured |
+|---|---|---|---|
+| Elasticsearch (ECK) | `tp eck-nodeset` | new node sets on the destination class, old ones retired once the cluster is ready; old volumes set to `Retain` first | Elasticsearch Ready after the move, no outage |
+| Kafka brokers (Strimzi) | `tp strimzi-pool` | a new `KafkaNodePool` on the destination class; partitions move by Cruise Control or by Kafka's own reassignment, then the old pool is removed | 51 partitions in 1m11s, Kafka Ready |
+| Kafka controllers (Strimzi) | `tp strimzi-stopped` | Kafka paused, same nodes copied to the destination class and swapped, then resumed | 6m53s; 4m37s with `--live-sync`; Kafka Ready after each |
+
+In a namespace that also holds other claims, these claims take their route and the
+rest follow the chosen mode in the same run. Each command has `plan` and `status`.
+
 ### Validated Compatibility, by Operator Kind
 
 Every migration path is measured end to end against a real cluster before it is
@@ -836,6 +882,33 @@ ships with no persistent volume — nothing to migrate, pending a chart revision
 - **A dry run creates, stops or copies nothing** — enforced at the engine level.
 - **A long-running copy is never silent.** Progress is reported on a fixed interval,
   with elapsed time and the exact command to follow the live log.
+
+---
+
+## Argo CD and GitOps
+
+When a namespace is managed by Argo CD, the migration suspends the Application,
+moves the claims and prints a session id. Git still names the old StorageClass until
+it is changed.
+
+1. Run the migration. The Application is suspended by the run itself.
+2. `tp gitops status --session <id>` lists what is left to change in Git.
+3. `tp gitops apply --session <id> > change.patch`, then `git am change.patch` in your
+   clone; push and merge it as usual.
+4. `tp gitops sync --session <id>` prints the Argo CD sync command; add `--yes` to run it.
+5. `tp gitops resume --session <id> --yes` gives the Application back its automated
+   sync policy.
+
+For a StatefulSet, `tp gitops sts-vct --session <id> --yes` recreates it with its
+`volumeClaimTemplates` on the new class (pods and claims stay); Argo CD recreated it
+from Git in about 20 s, Synced and Healthy.
+
+For several namespaces at once, `--namespaces a b c` replaces `--session`. The same
+steps are in the web interface under the migration's **Git change** tab and in **Bulk**.
+
+Measured against a real Argo CD on OpenShift (13 and 14 Oct 2026): status, patch,
+sync, resume (sync policy restored, application Synced and Healthy) and the
+StatefulSet recreation.
 
 ---
 
@@ -937,6 +1010,8 @@ environment, one representative dataset:
 | Snapshot | 65 s | No, predominantly fixed cost — only the final delta is inside the window |
 | Swap, per volume | 6 s floor | No — a pointer repoint, not a data transfer |
 
+- **Live sync on vSphere CSI → ONTAP NAS (k3s, 14 Oct 2026):** cutover window 2m02s
+  (stop 35s, final delta 37s, swap 11s, restart 5s).
 - **Offline copy places the entire transfer inside the cutover window** — window
   duration scales with dataset size.
 - **Snapshot and live-sync remove the bulk transfer from the cutover window** —
