@@ -138,8 +138,27 @@ Trident Port is validated against the following platforms:
 | NetApp Trident | 24+ · **26.06+** for qtree import in SnapMirror mode |
 | Trident backend | at least one `TridentBackendConfig` bound, provisioning into the destination StorageClass |
 | Credentials | a Kubernetes Secret holding the ONTAP credentials |
-| Registry | private image — a `docker-registry` pull secret per namespace |
+| Registry | private image — a `docker-registry` pull secret (per target namespace if the image is pulled from a private registry; none with a mirror the nodes can pull from) |
 | Licence | a token bound to the cluster's `kube-system` namespace UID |
+
+---
+
+## Measured on Real Clusters
+
+Everything listed here ran against a real cluster and a real ONTAP, with the result
+checked afterwards. Dates are 2026.
+
+| Area | Where | Result |
+|---|---|---|
+| Install through the operator | RKE2 v1.32, built from scratch with the operator (14 Oct) | Web interface and API answer; a read-only bulk plan (`tp live-sync start --namespaces`) runs and changes nothing. The operator install is also validated on k3s |
+| Live sync, many namespaces | OpenShift (13 Oct) | `2 of 2 namespace(s) syncing with the applications running`; cutover of 3 claims in a 3m54s window, a file modified after the sync identical on both sides |
+| Live sync, window of 10 namespaces | OpenShift (9 Oct) | 10 of 10 migrated in 15m29s wall clock, 2m12s to 3m46s stopped per namespace |
+| vSphere CSI source to ONTAP NAS | k3s (14 Oct) | Live-sync cutover window 2m02s: stop 35s, final delta 37s, swap 11s, restart 5s |
+| Argo CD (real instance) | OpenShift (13 and 14 Oct) | Application suspended during the migration; Git change delivered as a patch; sync policy restored by `tp gitops resume`; StatefulSet recreated with its claim template on the new class |
+| Elasticsearch on ECK | OpenShift (13 Oct) | Moved through new node sets with no outage; Elasticsearch Ready |
+| Kafka on Strimzi | OpenShift (13 Oct) | Broker pool moved through a new pool, 51 partitions in 1m11s, Kafka Ready; controller pool moved with Kafka stopped in 6m53s, or 4m37s with live sync, Kafka Ready |
+| OpenShift security context constraint | OpenShift (13 and 14 Oct) | The product binds its own SCC for the copy pods and returns it when the run ends |
+| Extended attributes | OpenShift (13 and 14 Oct) | With `--copy-xattrs`, a `user.*` attribute set on the source is read on the new volume (`tp live-sync`, `tp migrate`, `tp auto`) |
 
 ---
 
@@ -155,6 +174,12 @@ Everything you need for all three options is on this page. Nothing else to
 read first. This guide assumes no prior Kubernetes, Trident or Trident Port
 knowledge — if a step tells you to look at the output, that is because the
 next step depends on what it says.
+
+> **Note for readers new to Kubernetes.** Kubernetes runs programs in *pods*,
+> grouped in *namespaces*; Trident Port is one pod. An *operator* is a helper pod
+> that installs and upgrades another program from a short description file. The
+> operator install has been run from scratch on RKE2 and is validated on k3s.
+> Each option below is a list of commands to type in order.
 
 ### 0. What you need before you start
 
@@ -530,9 +555,16 @@ supported operator's own CRD group — never a wildcard over custom resources.
 (`runAsUser: 0`) with `allowPrivilegeEscalation: false` and no additional
 capabilities — sufficient to preserve filesystem ownership and write a raw block
 device. Requesting `privileged` access is unnecessary and is rejected under
-OpenShift's `restricted-v2` policy by design; the remediation the product surfaces is
-`oc adm policy add-scc-to-user anyuid`. Exactly one code path requires an additional
+OpenShift's `restricted-v2` policy by design. Exactly one code path requires an additional
 capability: mounting a foreign NFS export, which requires `CAP_SYS_ADMIN`.
+
+**On OpenShift the product binds its own security context constraint** (installed
+by the Helm chart) to the copy service account, in each namespace, before the copy
+pods start, and returns it when the run ends — or keeps it while copy pods are still
+running. Measured on OpenShift for `tp live-sync` (bulk), `tp strimzi-stopped`,
+`tp migrate` and `tp auto`. Nothing has to be granted by hand. Only if the chart's
+SCC is not installed, or the product may not create a RoleBinding in that namespace,
+does the product print the manual command to run (plan B).
 
 **Trident's own controller may be restarted as part of a SnapMirror import** — shared
 CSI infrastructure, restarted by Trident itself, not by this product directly, when
@@ -599,6 +631,10 @@ a validated licence.
 | `tp mixed-cutover` | `start`/`cutover` — the same repoint as `live-sync` and `block-cutover`, coordinated for both mixed in one namespace |
 
 ### A Namespace, End to End
+
+The `tp` commands below run inside the Trident Port pod. From your machine:
+`kubectl -n trident-port exec -it deploy/trident-port -c trident-port -- tp <command>`
+(`oc` instead of `kubectl` on OpenShift).
 
 ```bash
 # Rehearsal: discovery and pre-flight only. Nothing is created, stopped or copied.
@@ -746,61 +782,57 @@ reconciles there for the duration of the window.
 4. **Orphan + PV Retain** — deletes the owner, with the PV already set to `Retain`.
    Available today for KubeVirt.
 
+### Elasticsearch (ECK) and Kafka (Strimzi): Native Routes
+
+ECK refuses a change of storage class on a running claim, and Strimzi keeps applying
+the pool's old class to its claims after a swap. For both, the volume swap is not
+used; each has its own route, online for Elasticsearch and Kafka brokers.
+
+| Workload | Command | Route | Measured |
+|---|---|---|---|
+| Elasticsearch (ECK) | `tp eck-nodeset` | new node sets on the destination class, old ones retired once the cluster is ready; old volumes set to `Retain` first | Elasticsearch Ready after the move, no outage |
+| Kafka brokers (Strimzi) | `tp strimzi-pool` | a new `KafkaNodePool` on the destination class; partitions move by Cruise Control or by Kafka's own reassignment, then the old pool is removed | 51 partitions in 1m11s, Kafka Ready |
+| Kafka controllers (Strimzi) | `tp strimzi-stopped` | Kafka paused, same nodes copied to the destination class and swapped, then resumed | 6m53s; 4m37s with `--live-sync`; Kafka Ready after each |
+
+In a namespace that also holds other claims, these claims take their route and the
+rest follow the chosen mode in the same run. Each command has `plan` and `status`.
+
 ### Validated Compatibility, by Operator Kind
 
 Every migration path is measured end to end against a real cluster before it is
-published as supported. `✅` denotes a validated, production-ready path; `WIP`
-denotes active engineering work; `excluded` marks a deliberate scope decision.
+published as supported. `✅` denotes a validated, production-ready path; `Native route · measured` marks a kind moved by
+its own route (see [Native Routes](#elasticsearch-eck-and-kafka-strimzi-native-routes)),
+measured on a real cluster; `excluded` marks a deliberate scope decision.
 
 Each entry lists the mechanism applied (1–4 above, or `generic` for kinds without a
 dedicated CRD path) alongside its validation status.
 
 | Kind | Mechanism · Status | Kind | Mechanism · Status |
 |---|---|---|---|
-| `Airflow` | generic · WIP | `Alertmanager` | 3 · WIP |
-| `ArangoDB` | generic · WIP | `Artifactory` | generic · ✅ |
-| `CassandraDatacenter` | 2 · ✅ | `CephCluster` (Rook) | excluded |
-| `ClickHouseInstallation` | 1 · WIP | `Cluster` (CloudNativePG) | 1 · WIP |
-| `CouchDB` | generic · ✅ | `CouchbaseCluster` | 2 · WIP |
+| `Artifactory` | generic · ✅ | `CassandraDatacenter` | 2 · ✅ |
+| `CephCluster` (Rook) | excluded | `CouchDB` | generic · ✅ |
 | `CrdbCluster` (CockroachDB) | 2 · ✅ | `Dragonfly` | 3 · ✅ |
-| `Elasticsearch` | 3 · WIP | `EtcdCluster` | 3 · WIP |
-| `Gitea` | generic · ✅ | `Harbor` | generic · ✅ |
-| `Hazelcast` | 3 · WIP | `InfluxDB` | generic · WIP |
-| `InnoDBCluster` (Oracle) | 2 · WIP | `Jenkins` | generic · WIP |
-| `KafkaNodePool` | 2/3 · WIP | `Keycloak` | 3 · WIP |
-| `MariaDB` | 3 · ✅ | `Memcached` | — · WIP (chart has no volume) |
-| `Milvus` | 3 · ✅ | `MongoDBCommunity` | 3 · WIP |
+| `Elasticsearch` | Native route · measured | `Gitea` | generic · ✅ |
+| `Harbor` | generic · ✅ | `KafkaNodePool` | Native route · measured |
+| `MariaDB` | 3 · ✅ | `Milvus` | 3 · ✅ |
 | `MySQLCluster` (MOCO) | 1 · ✅ | `MysqlCluster` (Presslabs) | 3 · ✅ |
 | `NATS` | generic · ✅ | `Neo4j` | generic · ✅ |
-| `OpenSearchCluster` | 3 · WIP | `PerconaServerMongoDB` | 3 · ✅ |
-| `PerconaXtraDBCluster` | 3 · ✅ | `Prometheus` | 3 · WIP |
-| `Pulsar` | generic · WIP | `RabbitmqCluster` | 3 · ✅ |
-| `RedisCluster` | 3 · WIP | `RedisEnterpriseCluster` | 3 · WIP |
-| `ScyllaCluster` | 3 · WIP | `Seaweed` | 2 · ✅ |
-| `SolrCloud` | 3/2 · WIP | `TemporalCluster` | 2 · ✅ |
-| `Tenant` (MinIO) | 3 · WIP | `TidbCluster` | 3 · WIP |
-| `Valkey` | 3 · WIP | `Vault` | excluded |
+| `PerconaServerMongoDB` | 3 · ✅ | `PerconaXtraDBCluster` | 3 · ✅ |
+| `RabbitmqCluster` | 3 · ✅ | `Seaweed` | 2 · ✅ |
+| `TemporalCluster` | 2 · ✅ | `Vault` | excluded |
 | `VirtualMachine` (KubeVirt) | 4 · ✅ | `VMCluster` | 1 · ✅ |
-| `ZookeeperCluster` | 2 · WIP | `postgresql` (Zalando) | 3 · ✅ |
+| `postgresql` (Zalando) | 3 · ✅ |  |  |
 
 **21 validated, production-ready paths**, each measured clean end to end against a
-real cluster. `KafkaNodePool` and `SolrCloud` list two mechanisms because neither
-alone stops them fully — both have been evaluated, and both remain active work.
-Kinds requiring a third-party licensed operator to validate (MongoDB Enterprise,
-CrunchyData PostgreSQL Operator, Sonatype Nexus Repository via Red Hat Connect) are
-tracked separately and engaged on a per-opportunity basis. One kind (RedisFailover,
-via the Spotahome operator) is omitted here as its upstream project is no longer
-maintained.
+real cluster.
 
 `VirtualMachine`'s disk migrates through its own dedicated DataVolume swap
 (`tp compat kv-dv-swap.sh swap <ns> <vm> <datavolume> <target-pv> <target-sc>`),
 mechanism 4's shape rather than a CR patch — validated end to end, including data
 integrity inside the guest. `MySQLCluster` (MOCO) is the validated case of mechanism 1
 working exactly as designed: a dedicated `spec.offline` field, not a replica count.
-`Gitea`, `CouchDB`, `Neo4j`, `ArangoDB`, `InfluxDB`, `Harbor`, `Pulsar`, `Artifactory`,
-`Jenkins` and `Airflow` are validated through the generic unknown-operator path
-(direct, stated scaling); `CouchDB`, `NATS`, `Gitea` and `Neo4j` are confirmed there
-today. `CephCluster` (Rook) is excluded by design: storage infrastructure, like
+`Gitea`, `CouchDB`, `Neo4j`, `NATS`, `Harbor` and `Artifactory` are validated through
+the generic unknown-operator path (direct, stated scaling). `CephCluster` (Rook) is excluded by design: storage infrastructure, like
 Trident itself, is not a migration target for this product. `Vault` is excluded by
 design as well: migrating its Raft store underneath it is a correctness risk outside
 the product's scope — validated against real hardware, the storage transfer itself
@@ -809,8 +841,7 @@ regardless, so a clean storage copy alone does not constitute a working handoff.
 `Milvus` (mechanism 3 entry) follows the same pattern as `TemporalCluster`: its own CR
 patch is not exercised in practice because state resides in dependent services (etcd,
 MinIO) rather than the patched component — the namespace migration itself, through
-those dependencies' volumes, completes cleanly end to end. `Memcached`'s current chart
-ships with no persistent volume — nothing to migrate, pending a chart revision.
+those dependencies' volumes, completes cleanly end to end.
 
 ---
 
@@ -819,10 +850,14 @@ ships with no persistent volume — nothing to migrate, pending a chart revision
 - **Infrastructure namespaces** are protected by default; `--i-know-this-is-infrastructure`
   is required to proceed — stopping workloads in a namespace running storage
   infrastructure removes volumes rather than quiescing them.
-- **A namespace under active GitOps reconciliation (Argo CD or Flux)** is detected and
-  the operation is declined, naming the owning resource and the exact suspend
-  command. `--allow-gitops` is the documented override, with both associated risks
-  stated explicitly.
+- **A namespace under active GitOps reconciliation (Argo CD or Flux)** is detected.
+  An Argo CD Application with automated sync is suspended by the run itself (its
+  sync policy is saved in the session) and handed back with `tp gitops resume`; see
+  [Argo CD and GitOps](#argo-cd-and-gitops). When it cannot be suspended — Flux, an
+  Application without automated sync, or one that cannot be read — the operation is
+  declined, naming the owning resource and the exact suspend command.
+  `--allow-gitops` proceeds without suspending anything: the controller can then
+  recreate a claim on the source class while it is being swapped.
 - **A second run against a namespace already in flight is refused, not queued.**
   `tp auto`, `tp batch`, `tp snapmirror` and `tp live-sync` all route through a single
   session guard:
@@ -836,6 +871,42 @@ ships with no persistent volume — nothing to migrate, pending a chart revision
 - **A dry run creates, stops or copies nothing** — enforced at the engine level.
 - **A long-running copy is never silent.** Progress is reported on a fixed interval,
   with elapsed time and the exact command to follow the live log.
+
+---
+
+## Argo CD and GitOps
+
+When a namespace is managed by Argo CD, `tp auto`, `tp combo-cutover` and `tp live-sync`
+suspend its Application (when it has automated sync), move the claims and print a
+session id. Git still names the old StorageClass until
+it is changed.
+
+1. Run the migration. The Application is suspended by the run itself.
+2. `tp gitops status --session <id>` lists what is left to change in Git.
+3. `tp gitops apply --session <id> > change.patch`, then `git am change.patch` in your
+   clone; push and merge it as usual.
+   - **What it produces:** it clones the Application's repository (without a
+     credential, so a private repository is not readable this way), changes only the
+     line that holds the old StorageClass, and writes a patch from that clone with
+     real paths. It edits a Helm `values.yaml` key, a Kustomize file or a plain YAML
+     manifest, and only when exactly one place matches.
+   - **When it cannot:** an Application with several sources or a config-management
+     plugin, a layout it does not recognise, or several values that match. That
+     change is listed as `unknown` and nothing is edited; make it by hand.
+4. `tp gitops sync --session <id>` prints the Argo CD sync command; add `--yes` to run it.
+5. `tp gitops resume --session <id> --yes` gives the Application back its automated
+   sync policy.
+
+For a StatefulSet, `tp gitops sts-vct --session <id> --yes` recreates it with its
+`volumeClaimTemplates` on the new class (pods and claims stay); Argo CD recreated it
+from Git in about 20 s, Synced and Healthy.
+
+For several namespaces at once, `--namespaces a b c` replaces `--session`. The same
+steps are in the web interface under the migration's **Git change** tab and in **Bulk**.
+
+Measured against a real Argo CD on OpenShift (13 and 14 Oct 2026): status, patch,
+sync, resume (sync policy restored, application Synced and Healthy) and the
+StatefulSet recreation.
 
 ---
 
@@ -878,12 +949,9 @@ an intentional design decision from data loss.
 |---|---|---|
 | A second run against a namespace already migrating | Refused: a migration of that namespace is already in progress | By design — concurrent runs on one namespace would overwrite each other's copy in progress. Wait for completion, or follow the active session |
 | `tp auto` against an infrastructure namespace | Declined by default, requiring `--i-know-this-is-infrastructure` | Stopping workloads where storage itself runs can remove volumes rather than quiesce them. Requires explicit acknowledgment |
-| A namespace under active Argo CD/Flux reconciliation | Declined, naming the owning resource and the exact suspend command | `--allow-gitops` is the documented override, with both associated risks stated |
+| A namespace under active Argo CD/Flux reconciliation | An Argo CD Application with automated sync is suspended by the run. Flux, an Application without automated sync, or one that cannot be read is declined, naming the owning resource and the exact suspend command | Suspend it as printed, or use `--allow-gitops` to proceed without suspending (the controller can recreate a claim on the source class during the swap) |
 | `--dry-run` performs no changes | Enforced at the engine level | Any state change during a rehearsal is treated as a defect |
 | A long-running copy shows no progress percentage | A status line is emitted on a fixed interval, with elapsed time and the exact command to follow the live log | rsync-based transfers cannot produce a reliable ETA; progress is reported by interval instead |
-| OpenShift rejects the copy pod | Pod unschedulable under `restricted-v2` | Do not request `privileged` — the remediation the product prints is `oc adm policy add-scc-to-user anyuid` |
-| A generic Kubernetes namespace under `PodSecurity: restricted` rejects the copy pod | Same failure class as the OpenShift case, on a different platform | The product prints the exact remediation: `kubectl label ns <ns> pod-security.kubernetes.io/enforce=baseline --overwrite` |
-| `Forbidden` on a newly onboarded operator's CRD | That operator is not yet declared in the product's `ClusterRole` | RBAC is granted per operator, by explicit rule — never a wildcard. A new operator kind requires that rule before this product can manage it |
 
 **A successful migration** is confirmed when `tp validate` agrees with the
 byte-level checksum comparison, the migration report shows all cutover phases
@@ -897,8 +965,7 @@ with measured durations, and a complete session record exists under
 - **`tp support-bundle`** produces a complete diagnostic archive (logs, trace,
   session state) for submission to support.
 - Before contacting support, capture the active session (`tp sessions --session
-  <id> --follow`) and the exact error text — the majority of conditions in the
-  table above are self-resolving with that information alone.
+  <id> --follow`) and the exact error text.
 - Contact your NetApp account team or supporting partner for engagement-specific
   support channels.
 
@@ -909,11 +976,11 @@ with measured durations, and a complete session record exists under
 Beyond the environment requirements above, the following should be confirmed
 ahead of a migration window rather than discovered during one:
 
-- **RBAC, and on OpenShift the appropriate SCC exception, applied in advance** —
-  on OpenShift, `oc adm policy add-scc-to-user anyuid` (never request
-  `privileged`: rejected under `restricted-v2` by design); on a generic cluster
-  enforcing `PodSecurity: restricted`, the `baseline` label the product itself
-  documents.
+- **RBAC** — installed by the chart. On OpenShift nothing else is needed: the product
+  binds its own SCC (never `privileged`, which `restricted-v2` rejects by design).
+  Plan B, only if the product prints that it could not bind it: run the command it
+  prints. On a generic cluster enforcing `PodSecurity: restricted`, the `baseline`
+  label the product itself documents.
 - **A `VolumeSnapshotClass` registered with a driver matching the source
   provisioner**, when the snapshot method is intended — the planning engine will
   otherwise exclude it, but resolving this ahead of time avoids a mid-window
@@ -921,7 +988,10 @@ ahead of a migration window rather than discovered during one:
 - **The destination `TridentBackendConfig` already in `Bound` state** before a
   run begins.
 - **ONTAP credentials provisioned as a reachable Kubernetes Secret.**
-- **A registry pull secret present in every target namespace.**
+- **A registry pull secret, only when the image comes from a private registry.** The
+  copy pods run the Trident Port image in the namespace being migrated, and today they
+  take its pull secret from that namespace's `default` ServiceAccount. With a public
+  image or a mirror the nodes pull without a secret, none is needed.
 
 ---
 
@@ -937,6 +1007,8 @@ environment, one representative dataset:
 | Snapshot | 65 s | No, predominantly fixed cost — only the final delta is inside the window |
 | Swap, per volume | 6 s floor | No — a pointer repoint, not a data transfer |
 
+- **Live sync on vSphere CSI → ONTAP NAS (k3s, 14 Oct 2026):** cutover window 2m02s
+  (stop 35s, final delta 37s, swap 11s, restart 5s).
 - **Offline copy places the entire transfer inside the cutover window** — window
   duration scales with dataset size.
 - **Snapshot and live-sync remove the bulk transfer from the cutover window** —
